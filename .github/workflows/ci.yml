@@ -10,6 +10,18 @@ jobs:
   quality-gates:
     name: Quality Gates
     runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      # Supabase Configuration
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+
+      # SmartSuite Configuration
+      VITE_SMARTSUITE_API_KEY: ${{ secrets.VITE_SMARTSUITE_API_KEY }}
+      VITE_SMARTSUITE_WORKSPACE_ID: ${{ vars.VITE_SMARTSUITE_WORKSPACE_ID }}
+      VITE_SMARTSUITE_PROJECTS_TABLE: ${{ vars.VITE_SMARTSUITE_PROJECTS_TABLE }}
+      VITE_SMARTSUITE_VIDEOS_TABLE: ${{ vars.VITE_SMARTSUITE_VIDEOS_TABLE }}
 
     steps:
       - name: Checkout code
