@@ -12,8 +12,42 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NavigationProvider } from '../contexts/NavigationContext';
 import { ScriptStatusProvider } from '../contexts/ScriptStatusContext';
+
+// Create test QueryClient for isolated testing
+function createTestQueryClient() {
+  return new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        gcTime: Infinity,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
+        refetchOnMount: false,
+        refetchOnReconnect: false,
+      },
+      mutations: {
+        retry: false,
+      },
+    },
+  });
+}
+
+// Helper to wrap component with all required providers
+function renderWithAllProviders(component: React.ReactElement) {
+  const queryClient = createTestQueryClient();
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <NavigationProvider>
+        <ScriptStatusProvider>
+          {component}
+        </ScriptStatusProvider>
+      </NavigationProvider>
+    </QueryClientProvider>
+  );
+}
 
 // Mock console methods to capture warnings
 const originalConsoleError = console.error;
@@ -212,13 +246,7 @@ describe('TipTapEditor Lifecycle Issues - FIXED', () => {
 
       const { TipTapEditor: Component } = await import('./TipTapEditor');
 
-      const { unmount } = render(
-        <NavigationProvider>
-          <ScriptStatusProvider>
-            <Component />
-          </ScriptStatusProvider>
-        </NavigationProvider>
-      );
+      const { unmount } = renderWithAllProviders(<Component />);
 
       // Unmount immediately
       unmount();
@@ -266,13 +294,7 @@ describe('TipTapEditor Lifecycle Issues - FIXED', () => {
 
       const { TipTapEditor: Component } = await import('./TipTapEditor');
 
-      const { unmount } = render(
-        <NavigationProvider>
-          <ScriptStatusProvider>
-            <Component />
-          </ScriptStatusProvider>
-        </NavigationProvider>
-      );
+      const { unmount } = renderWithAllProviders(<Component />);
 
       // Simulate onCreate being called after unmount
       unmount();
@@ -332,13 +354,7 @@ describe('TipTapEditor Lifecycle Issues - FIXED', () => {
 
       const { TipTapEditor: Component } = await import('./TipTapEditor');
 
-      render(
-        <NavigationProvider>
-          <ScriptStatusProvider>
-            <Component />
-          </ScriptStatusProvider>
-        </NavigationProvider>
-      );
+      renderWithAllProviders(<Component />);
 
       await waitFor(() => {
         // Check if any layout shifts took longer than 30ms
@@ -372,13 +388,7 @@ describe('TipTapEditor Lifecycle Issues - FIXED', () => {
 
       const { TipTapEditor: Component } = await import('./TipTapEditor');
 
-      const { unmount } = render(
-        <NavigationProvider>
-          <ScriptStatusProvider>
-            <Component />
-          </ScriptStatusProvider>
-        </NavigationProvider>
-      );
+      const { unmount } = renderWithAllProviders(<Component />);
 
       unmount();
 
@@ -405,13 +415,7 @@ describe('TipTapEditor Lifecycle Issues - FIXED', () => {
 
       const { TipTapEditor: Component } = await import('./TipTapEditor');
 
-      const { unmount } = render(
-        <NavigationProvider>
-          <ScriptStatusProvider>
-            <Component />
-          </ScriptStatusProvider>
-        </NavigationProvider>
-      );
+      const { unmount } = renderWithAllProviders(<Component />);
 
       // Unmount before save completes
       unmount();

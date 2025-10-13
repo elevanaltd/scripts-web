@@ -76,10 +76,20 @@ export default defineConfig(({ mode }) => {
       }
     },
 
-    // Use local Supabase Docker instance for isolated testing
-    // Seeded with test data via supabase/seed.sql
-    // Run `supabase start` before running tests
-    env: {
+    // Conditional Supabase configuration:
+    // - CI: Use production Supabase (env vars from GitHub Actions)
+    // - Local: Use local Supabase Docker (isolated testing with seed data)
+    // Run `supabase start` before running tests locally
+    env: process.env.CI ? {
+      // CI: Use GitHub Actions environment variables (production Supabase)
+      VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL,
+      VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      VITE_SMARTSUITE_API_KEY: process.env.VITE_SMARTSUITE_API_KEY,
+      VITE_SMARTSUITE_WORKSPACE_ID: process.env.VITE_SMARTSUITE_WORKSPACE_ID,
+      VITE_SMARTSUITE_PROJECTS_TABLE: process.env.VITE_SMARTSUITE_PROJECTS_TABLE,
+      VITE_SMARTSUITE_VIDEOS_TABLE: process.env.VITE_SMARTSUITE_VIDEOS_TABLE,
+    } : {
+      // Local: Use local Supabase Docker instance (seeded via supabase/seed.sql)
       VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
       VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
       VITE_SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'
