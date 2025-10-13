@@ -31,10 +31,10 @@ DROP POLICY IF EXISTS "comments_client_create_optimized" ON public.comments;
 DROP POLICY IF EXISTS "comments_client_update_own_optimized" ON public.comments;
 DROP POLICY IF EXISTS "comments_client_delete_own_optimized" ON public.comments;
 
--- Step 2: Drop and recreate view with employee role included
-DROP VIEW IF EXISTS public.user_accessible_scripts CASCADE;
+-- Step 2: Drop and recreate materialized view with employee role included
+DROP MATERIALIZED VIEW IF EXISTS public.user_accessible_scripts CASCADE;
 
-CREATE VIEW public.user_accessible_scripts AS
+CREATE MATERIALIZED VIEW public.user_accessible_scripts AS
 -- Admin users: Can access ALL scripts
 SELECT
     up.id as user_id,
@@ -71,9 +71,9 @@ JOIN public.projects p ON uc.client_filter = p.client_filter
 JOIN public.videos v ON p.eav_code = v.eav_code
 JOIN public.scripts s ON v.id = s.video_id;
 
--- Step 3: Cannot create index on regular view (skip this step)
--- Note: Original migration 20250929210000 attempted to create a materialized view
--- but production database has a regular view instead
+-- Step 3: Create unique index on materialized view for performance
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accessible_scripts_user_script
+ON public.user_accessible_scripts (user_id, script_id);
 
 -- Step 4: Recreate RLS policies (unchanged from original migration)
 CREATE POLICY "comments_client_read_optimized" ON public.comments
@@ -177,7 +177,8 @@ USING (
     )
 );
 
--- Step 5: No refresh needed for regular view (data is computed on-demand)
+-- Step 5: Refresh materialized view to populate data
+REFRESH MATERIALIZED VIEW public.user_accessible_scripts;
 
 -- ============================================================================
 -- VERIFICATION
@@ -197,5 +198,5 @@ USING (
 -- Expected: Rows returned for all employee users × all scripts (CROSS JOIN)
 -- ============================================================================
 
-COMMENT ON VIEW public.user_accessible_scripts IS
-'Determines script access permissions for all user roles: admin (full access), employee (full access per North Star "Internal" definition), client (assigned projects only). Used by update_script_status() and RLS policies. Auto-refreshes via triggers on user_profiles, user_clients, and scripts tables.';
+COMMENT ON MATERIALIZED VIEW public.user_accessible_scripts IS
+'Determines script access permissions for all user roles: admin (full access), employee (full access per North Star "Internal" definition), client (assigned projects only). Used by update_script_status() and RLS policies. Refreshes via triggers on user_profiles, user_clients, and scripts tables.';
