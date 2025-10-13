@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { AuthProvider, useAuth } from './AuthContext'
+import { renderWithProviders } from '../test/testUtils'
 
 // Mock Supabase
 vi.mock('../lib/supabase', () => ({
@@ -45,7 +46,9 @@ describe('AuthContext', () => {
   })
 
   it('should provide auth context to children', async () => {
-    render(
+    // Phase 2B Fix: Use renderWithProviders to wrap AuthProvider with QueryClientProvider
+    // AuthProvider uses useQueryClient() internally (line 40 in AuthContext.tsx)
+    renderWithProviders(
       <AuthProvider>
         <TestComponent />
       </AuthProvider>

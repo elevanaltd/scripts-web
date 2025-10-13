@@ -215,7 +215,8 @@ describe('useCommentMutations - Integration Tests (Testguard-Approved)', () => {
 
     it('RED STATE: Gap G2 - should optimistically update comment resolution in cache', async () => {
       // Pre-populate cache with comment data
-      queryClient.setQueryData(['comments', 'script-456'], [
+      // P1 Fix: Use correct cache key with userId (line 138 in implementation)
+      queryClient.setQueryData(['comments', 'script-456', 'test-user-id'], [
         {
           id: 'comment-123',
           scriptId: 'script-456',
@@ -262,14 +263,15 @@ describe('useCommentMutations - Integration Tests (Testguard-Approved)', () => {
       })
 
       // Wait a tick for React Query's internal state to sync
+      // P1 Fix: Use correct cache key with userId (line 138 in implementation)
       await waitFor(() => {
-        const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456'])
+        const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456', 'test-user-id'])
         expect(cachedData).toBeDefined()
         expect(cachedData![0].resolvedAt).toBeTruthy()
       }, { timeout: 100 })
 
       // Verify resolved by
-      const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456'])
+      const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456', 'test-user-id'])
       expect(cachedData![0].resolvedBy).toBe('test-user-id')
 
       // Cleanup: wait for mutation to complete
@@ -318,7 +320,8 @@ describe('useCommentMutations - Integration Tests (Testguard-Approved)', () => {
   describe('unresolveMutation', () => {
     it('RED STATE: Gap G2 - should optimistically update comment unresolve in cache', async () => {
       // Pre-populate cache with resolved comment
-      queryClient.setQueryData(['comments', 'script-456'], [
+      // P1 Fix: Use correct cache key with userId (line 200 in implementation)
+      queryClient.setQueryData(['comments', 'script-456', 'test-user-id'], [
         {
           id: 'comment-123',
           scriptId: 'script-456',
@@ -365,14 +368,15 @@ describe('useCommentMutations - Integration Tests (Testguard-Approved)', () => {
       })
 
       // Wait a tick for React Query's internal state to sync
+      // P1 Fix: Use correct cache key with userId (line 200 in implementation)
       await waitFor(() => {
-        const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456'])
+        const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456', 'test-user-id'])
         expect(cachedData).toBeDefined()
         expect(cachedData![0].resolvedAt).toBeNull()
       }, { timeout: 100 })
 
       // Verify resolved by
-      const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456'])
+      const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456', 'test-user-id'])
       expect(cachedData![0].resolvedBy).toBeNull()
 
       // Cleanup: wait for mutation to complete
@@ -455,7 +459,8 @@ describe('useCommentMutations - Integration Tests (Testguard-Approved)', () => {
 
     it('RED STATE: Gap G2 - should optimistically remove comment from cache on delete', async () => {
       // Pre-populate cache with multiple comments
-      queryClient.setQueryData(['comments', 'script-456'], [
+      // P1 Fix: Use correct cache key with userId (line 257 in implementation)
+      queryClient.setQueryData(['comments', 'script-456', 'test-user-id'], [
         {
           id: 'comment-123',
           scriptId: 'script-456',
@@ -492,14 +497,15 @@ describe('useCommentMutations - Integration Tests (Testguard-Approved)', () => {
       })
 
       // Wait a tick for React Query's internal state to sync
+      // P1 Fix: Use correct cache key with userId (line 257 in implementation)
       await waitFor(() => {
-        const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456'])
+        const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456', 'test-user-id'])
         expect(cachedData).toBeDefined()
         expect(cachedData).toHaveLength(1)
       }, { timeout: 100 })
 
       // Verify correct comment was deleted
-      const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456'])
+      const cachedData = queryClient.getQueryData<CommentWithUser[]>(['comments', 'script-456', 'test-user-id'])
       expect(cachedData![0].id).toBe('comment-456')
 
       // Cleanup: wait for mutation to complete

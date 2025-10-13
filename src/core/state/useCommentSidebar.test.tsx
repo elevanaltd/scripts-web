@@ -18,12 +18,27 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { useCommentSidebar } from './useCommentSidebar';
 import type { CommentSidebarHookProps } from './useCommentSidebar';
+import { useAuth } from '../../contexts/AuthContext';
+import { mockUseAuth } from '../../test/testUtils';
 
 // Mock dependencies
+// Phase 2B Fix: Complete Supabase mock with channel subscription API
+const mockChannel = {
+  on: vi.fn().mockReturnThis(),
+  subscribe: vi.fn((callback) => {
+    // Immediately call callback with 'SUBSCRIBED' status
+    if (typeof callback === 'function') {
+      callback('SUBSCRIBED');
+    }
+    return mockChannel;
+  }),
+  unsubscribe: vi.fn(),
+};
+
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: vi.fn(),
-    channel: vi.fn(),
+    channel: vi.fn(() => mockChannel),
   },
 }));
 
@@ -32,11 +47,20 @@ vi.mock('../../contexts/AuthContext', () => ({
 }));
 
 vi.mock('./useCommentMutations', () => ({
-  useCommentMutations: vi.fn(),
+  useCommentMutations: vi.fn(() => ({
+    resolveMutation: { mutate: vi.fn(), isLoading: false },
+    unresolveMutation: { mutate: vi.fn(), isLoading: false },
+    deleteMutation: { mutate: vi.fn(), isLoading: false },
+  })),
 }));
 
 vi.mock('./useScriptCommentsQuery', () => ({
-  useScriptCommentsQuery: vi.fn(),
+  useScriptCommentsQuery: vi.fn(() => ({
+    data: [],
+    isLoading: false,
+    error: null,
+    refetch: vi.fn().mockResolvedValue({ data: [] }),
+  })),
 }));
 
 vi.mock('../../lib/comments', () => ({
@@ -71,6 +95,9 @@ describe('useCommentSidebar - Characterization Tests', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Phase 2B Fix: Mock useAuth to prevent "Cannot destructure property 'currentUser'" errors
+    vi.mocked(useAuth).mockReturnValue(mockUseAuth());
   });
 
   describe('Hook Initialization', () => {

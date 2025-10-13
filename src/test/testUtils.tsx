@@ -33,6 +33,7 @@
  * ```
  */
 
+/* eslint-disable react-refresh/only-export-components */
 import React, { ReactElement } from 'react'
 import { render, RenderOptions, RenderResult } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -60,11 +61,7 @@ export function createTestQueryClient(): QueryClient {
         retry: false, // No retries in tests
       },
     },
-    logger: {
-      log: () => {}, // Suppress logs
-      warn: () => {},
-      error: () => {},
-    },
+    // Note: logger removed in @tanstack/react-query v5 - logs suppressed by default in tests
   })
 }
 
@@ -188,7 +185,7 @@ export function renderWithProviders(
   } = options
 
   // Build provider stack (innermost to outermost)
-  let Wrapper = ({ children }: { children: React.ReactNode }) => {
+  const Wrapper = ({ children }: { children: React.ReactNode }) => {
     let content = children
 
     // Innermost: ScriptStatusProvider (if needed)
@@ -283,6 +280,40 @@ export function renderUnauthenticated(ui: ReactElement, options: Omit<TestRender
     ...options,
     authUser: null,
   })
+}
+
+/**
+ * Creates a mock useAuth return value for tests that need to mock useAuth directly
+ * (without using AuthProvider wrapper)
+ *
+ * Usage:
+ * ```tsx
+ * vi.mock('@/contexts/AuthContext', () => ({
+ *   useAuth: vi.fn()
+ * }))
+ *
+ * beforeEach(() => {
+ *   vi.mocked(useAuth).mockReturnValue(mockUseAuth())
+ * })
+ * ```
+ */
+export function mockUseAuth(overrides: Partial<MockAuthUser> = {}) {
+  const defaultUser: MockAuthUser = {
+    id: 'test-user',
+    email: 'test@example.com',
+    role: 'admin',
+    display_name: 'Test User',
+    ...overrides,
+  }
+
+  return {
+    currentUser: createMockUser(defaultUser),
+    userProfile: createMockUserProfile(defaultUser),
+    loading: false,
+    signIn: vi.fn().mockResolvedValue({ error: null }),
+    signUp: vi.fn().mockResolvedValue({ error: null }),
+    logout: vi.fn().mockResolvedValue(undefined),
+  }
 }
 
 /**

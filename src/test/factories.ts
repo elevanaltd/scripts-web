@@ -70,18 +70,17 @@ export function createMockProject(overrides?: Partial<Project>): Project {
 
 /**
  * Creates a mock Video with sensible defaults
+ * Note: Videos link to projects via eav_code FK (not project_id)
  */
 export function createMockVideo(overrides?: Partial<Video>): Video {
   const id = overrides?.id || generateId('video')
   return {
     id,
-    project_id: overrides?.project_id || generateId('project'),
     title: `Test Video ${id}`,
-    smartsuite_id: `ss-${id}`,
-    video_number: 1,
-    status: 'in_progress',
-    due_date: null,
-    notes: null,
+    eav_code: overrides?.eav_code || null, // FK to projects.eav_code
+    main_stream_status: null,
+    production_type: null,
+    vo_stream_status: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     ...overrides,
@@ -148,6 +147,7 @@ export function createMockComment(overrides?: Partial<Comment>): Comment {
 
 /**
  * Creates a mock UserProfile with sensible defaults
+ * Note: client_filter is NOT in user_profiles - it's in user_clients junction table
  */
 export function createMockUserProfile(overrides?: Partial<UserProfile>): UserProfile {
   const id = overrides?.id || generateId('user')
@@ -157,7 +157,6 @@ export function createMockUserProfile(overrides?: Partial<UserProfile>): UserPro
     email,
     display_name: overrides?.display_name || `User ${id}`,
     role: overrides?.role || 'client',
-    client_filter: null,
     created_at: new Date().toISOString(),
     ...overrides,
   }
@@ -165,6 +164,7 @@ export function createMockUserProfile(overrides?: Partial<UserProfile>): UserPro
 
 /**
  * Creates a complete project hierarchy: Project → Video → Script → Components
+ * Note: Video links to project via eav_code (not project_id)
  */
 export function createProjectHierarchy(options?: {
   projectOverrides?: Partial<Project>
@@ -174,7 +174,7 @@ export function createProjectHierarchy(options?: {
 }) {
   const project = createMockProject(options?.projectOverrides)
   const video = createMockVideo({
-    project_id: project.id,
+    eav_code: project.eav_code, // Link via eav_code FK
     ...options?.videoOverrides,
   })
   const script = createMockScript({
@@ -227,6 +227,7 @@ export function createCommentThread(options?: {
 
 /**
  * Creates multiple users with different roles
+ * Note: client_filter removed - use createMockUserClient() for client access
  */
 export function createUserSet(): {
   admin: UserProfile
@@ -251,15 +252,9 @@ export function createUserSet(): {
       email: 'client@example.com',
       display_name: 'Client User',
       role: 'client',
-      client_filter: 'CLIENT-123',
     }),
   }
 }
-
-/**
- * Type guard: Check if Video object exists
- */
-type Video = Database['public']['Tables']['videos']['Row']
 
 // Re-export for tests
 export type {
