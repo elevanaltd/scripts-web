@@ -76,13 +76,13 @@ export default defineConfig(({ mode }) => {
       }
     },
 
-    // Use production Supabase for integration tests (test users exist there)
-    // Constitutional: TEMPORARY hardcoded config for Phase 2.95A test stabilization
-    // Previous approach (env object references) didn't work due to Vite's load order
-    // TODO: Migrate to local Supabase with test data seeding for true isolated testing
+    // Use local Supabase Docker instance for isolated testing
+    // Seeded with test data via supabase/seed.sql
+    // Run `supabase start` before running tests
     env: {
-      VITE_SUPABASE_URL: 'https://zbxvjyrbkycbfhwmmnmy.supabase.co',
-      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_hKu4NvkHKDtdrVFTHC-hUQ_mgUrGgyu'
+      VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
+      VITE_SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'
     }
   }
   }

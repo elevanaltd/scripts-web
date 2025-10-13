@@ -17,7 +17,8 @@
     "supabase:types": "npx supabase gen types typescript --project-id zbxvjyrbkycbfhwmmnmy --schema public > src/types/database.types.ts",
     "supabase:link": "npx supabase link --project-ref zbxvjyrbkycbfhwmmnmy",
     "supabase:pull": "npx supabase db pull",
-    "db:update": "npm run supabase:pull && npm run supabase:types"
+    "db:update": "npm run supabase:pull && npm run supabase:types",
+    "setup:test-users": "tsx scripts/setup-test-users.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.38.0",
