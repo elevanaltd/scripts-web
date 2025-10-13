@@ -1,0 +1,160 @@
+/* Desktop Required Fallback Styles */
+
+.desktop-required {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+}
+
+.desktop-required-container {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  padding: 48px 32px;
+  max-width: 600px;
+  width: 100%;
+  text-align: center;
+}
+
+.desktop-required-icon {
+  color: #667eea;
+  margin-bottom: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.desktop-required-title {
+  font-size: 32px;
+  font-weight: 700;
+  color: #1a202c;
+  margin: 0 0 16px 0;
+  line-height: 1.2;
+}
+
+.desktop-required-description {
+  font-size: 18px;
+  color: #4a5568;
+  line-height: 1.6;
+  margin: 0 0 32px 0;
+}
+
+.desktop-required-features {
+  text-align: left;
+  margin-bottom: 32px;
+}
+
+.desktop-required-features h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0 0 16px 0;
+  text-align: center;
+}
+
+.desktop-required-features ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.desktop-required-features li {
+  padding: 8px 0;
+  color: #4a5568;
+  line-height: 1.5;
+}
+
+.desktop-required-features strong {
+  color: #2d3748;
+  font-weight: 600;
+}
+
+.desktop-required-instructions {
+  margin-bottom: 32px;
+}
+
+.desktop-required-instructions h2 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0 0 24px 0;
+}
+
+.access-options {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.access-option {
+  background: #f7fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: left;
+}
+
+.access-option h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0 0 8px 0;
+}
+
+.access-option p {
+  font-size: 14px;
+  color: #4a5568;
+  margin: 0 0 4px 0;
+  line-height: 1.4;
+}
+
+.access-option small {
+  font-size: 12px;
+  color: #718096;
+  font-style: italic;
+}
+
+.desktop-required-footer {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 24px;
+  margin-top: 32px;
+}
+
+.desktop-required-footer p {
+  font-size: 14px;
+  color: #718096;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Responsive adjustments for smaller mobile screens */
+@media (max-width: 480px) {
+  .desktop-required {
+    padding: 16px;
+  }
+
+  .desktop-required-container {
+    padding: 32px 24px;
+  }
+
+  .desktop-required-title {
+    font-size: 28px;
+  }
+
+  .desktop-required-description {
+    font-size: 16px;
+  }
+
+  .access-option h3 {
+    font-size: 15px;
+  }
+
+  .access-option p {
+    font-size: 13px;
+  }
+}

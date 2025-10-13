@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "api/webhook-smartsuite.ts": {
+      "maxDuration": 10
+    },
+    "api/sync-manual.ts": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

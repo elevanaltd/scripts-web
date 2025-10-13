@@ -1,0 +1,442 @@
+/**
+ * CommentSidebar.css - Comment Sidebar Styles
+ *
+ * STEP 2.2.3: CSS extracted from component to achieve <300 LOC mandate
+ * Extracted: ~370 LOC of inline styles
+ */
+
+.comments-sidebar {
+  width: 300px;
+  height: 100%;
+  border-left: 1px solid #e5e7eb;
+  background: white;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+/* Priority 4: Sticky header container for header + filters */
+.comments-sticky-header {
+  position: sticky;
+  top: 0;
+  background: white;
+  z-index: 10;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.comment-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.comment-filters button {
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.comment-filters button.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.empty-state {
+  text-align: center;
+  color: #6b7280;
+  padding: 32px 16px;
+}
+
+.comment-thread {
+  margin-bottom: 16px;
+}
+
+.comment-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.comment-card:hover {
+  border-color: #3B82F6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.comment-card.highlight-hover {
+  border-color: #F59E0B;
+  background-color: #FFFBEB;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+}
+
+.comment-reply {
+  margin-left: 24px;
+  border-left: 3px solid #3b82f6;
+}
+
+.comment-resolved {
+  background: #f3f4f6;
+  opacity: 0.8;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.comment-number-badge {
+  background: #3B82F6;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  flex-shrink: 0;
+}
+
+.comment-author {
+  font-weight: 600;
+}
+
+.comment-date {
+  color: #6b7280;
+}
+
+.comment-content {
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.comment-actions button {
+  padding: 2px 8px;
+  border: none;
+  background: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.comment-actions button:hover {
+  text-decoration: underline;
+}
+
+.comments-sidebar form {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+}
+
+.comments-sidebar textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.form-actions button {
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.form-actions button[type="submit"] {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.form-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.reply-form {
+  margin: 8px 0 16px 16px;
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.reply-form.nested-reply {
+  margin-left: 32px;
+  background: #e5e7eb;
+}
+
+/* Edit Form Styling */
+.edit-form {
+  margin: 8px 0;
+}
+
+.edit-textarea {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.delete-button {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+.delete-button:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.delete-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.delete-dialog {
+  background: white;
+  padding: 24px;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  max-width: 400px;
+  width: 90%;
+}
+
+.delete-dialog h3 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.delete-dialog p {
+  margin: 0 0 20px 0;
+  color: #6b7280;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirm-delete-button {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+.confirm-delete-button:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+/* Error State Styling */
+.error-state {
+  padding: 20px;
+  text-align: center;
+}
+
+.error-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #dc2626;
+}
+
+.error-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.error-text h3 {
+  margin: 0 0 4px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.error-text p {
+  margin: 0;
+  font-size: 14px;
+  color: #7f1d1d;
+  line-height: 1.4;
+}
+
+.error-actions {
+  display: flex;
+  justify-content: center;
+}
+
+.retry-button {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.retry-button:hover {
+  background: #b91c1c;
+}
+
+/* Inline Error Styling */
+.inline-error {
+  margin: 12px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.error-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error-icon-small {
+  font-size: 16px;
+  color: #dc2626;
+  flex-shrink: 0;
+}
+
+.error-message-small {
+  flex: 1;
+  font-size: 13px;
+  color: #7f1d1d;
+  line-height: 1.4;
+}
+
+.error-dismiss {
+  background: none;
+  border: none;
+  color: #7f1d1d;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.error-dismiss:hover {
+  background: rgba(127, 29, 29, 0.1);
+}
+
+/* Connection Status Banner */
+.connection-status-banner {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.connection-status-banner.reconnecting {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+}
+
+.connection-status-banner.degraded {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #f87171;
+}
+
+.reconnect-button {
+  padding: 4px 8px;
+  margin-left: 8px;
+  background: white;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+/* Universal Comment Button */
+.universal-comment-button {
+  width: 100%;
+  padding: 10px;
+  background: #3B82F6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: background-color 0.2s;
+}
+
+.universal-comment-button:hover {
+  background: #2563EB;
+}
+
+/* Universal Comment Form Header */
+.universal-comment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.universal-comment-header span {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: normal;
+}

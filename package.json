@@ -1,0 +1,68 @@
+{
+  "name": "eav-scripts-web",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "EAV Scripts Web - Collaborative script editor with realtime Y.js collaboration and SmartSuite integration",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint:fix": "eslint . --ext ts,tsx --fix",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run lint && npm run typecheck && npm run test",
+    "supabase:types": "npx supabase gen types typescript --project-id zbxvjyrbkycbfhwmmnmy --schema public > src/types/database.types.ts",
+    "supabase:link": "npx supabase link --project-ref zbxvjyrbkycbfhwmmnmy",
+    "supabase:pull": "npx supabase db pull",
+    "db:update": "npm run supabase:pull && npm run supabase:types"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.0",
+    "@tanstack/react-query": "^5.90.2",
+    "@tiptap/extension-collaboration": "^2.1.13",
+    "@tiptap/extension-collaboration-cursor": "^2.1.13",
+    "@tiptap/react": "^2.1.13",
+    "@tiptap/starter-kit": "^2.1.13",
+    "dompurify": "^3.2.7",
+    "isomorphic-dompurify": "^2.28.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^7.9.2",
+    "yjs": "^13.6.8",
+    "zod": "^4.1.11",
+    "zustand": "^5.0.8"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.1.4",
+    "@testing-library/react": "^14.1.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^24.5.2",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@typescript-eslint/eslint-plugin": "^8.44.1",
+    "@typescript-eslint/parser": "^8.44.1",
+    "@vercel/node": "^5.3.24",
+    "@vitejs/plugin-react": "^4.1.1",
+    "dotenv": "^17.2.2",
+    "eslint": "^8.53.0",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.4",
+    "happy-dom": "^19.0.2",
+    "jsdom": "^23.0.1",
+    "typescript": "^5.2.2",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "overrides": {
+    "undici": "^5.28.6",
+    "path-to-regexp": "^6.2.3",
+    "esbuild": "^0.25.10"
+  }
+}

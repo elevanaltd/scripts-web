@@ -1,0 +1,3 @@
+-- Placeholder for remote migration
+-- This file exists to sync with remote migration history
+-- The actual schema is already in the database

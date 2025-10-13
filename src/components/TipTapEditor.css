@@ -1,0 +1,342 @@
+/**
+ * TIPTAP EDITOR STYLES
+ * Extracted from TipTapEditor.tsx (Step 2.1.5)
+ */
+
+.editor-layout {
+  display: flex;
+  height: 100vh;
+  background: #f5f5f5;
+}
+
+/* Main Editor - Takes up most space */
+.main-editor {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  margin: 20px;
+  margin-right: 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  overflow: hidden;
+}
+
+.editor-header {
+  padding: 20px 30px;
+  border-bottom: 2px solid #e5e5e5;
+  background: #fafafa;
+  /* Priority 4: Sticky header - stays visible while content scrolls */
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.editor-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.editor-subtitle {
+  font-size: 14px;
+  color: #666;
+  margin-top: 5px;
+}
+
+.save-status {
+  font-weight: 500;
+  color: #10B981;
+}
+
+.save-status:has-text('Saving') {
+  color: #F59E0B;
+}
+
+.save-status:has-text('error') {
+  color: #EF4444;
+}
+
+.save-status:has-text('Unsaved') {
+  color: #F59E0B;
+}
+
+/* Editor Content Area - Full Width */
+.editor-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 40px 60px; /* Increased horizontal padding */
+  padding-left: 120px; /* Space for component labels */
+  max-width: none; /* Remove max-width constraint */
+  margin: 0;
+  width: 100%;
+}
+
+.ProseMirror {
+  min-height: calc(100vh - 200px);
+  outline: none;
+  font-size: 17px;
+  line-height: 1.8;
+  color: #333;
+}
+
+.ProseMirror h2 {
+  font-size: 26px;
+  margin-bottom: 15px;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.ProseMirror p {
+  margin-bottom: 18px;
+  position: relative;
+}
+
+/* Component labels - positioned in margin */
+.component-label {
+  position: absolute !important;
+  left: -50px !important;
+  top: 3px;
+  background: #6B7280;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Placeholder states */
+.no-video-placeholder,
+.loading-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 400px;
+  text-align: center;
+  color: #666;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 20px 0;
+}
+
+.no-video-placeholder h3 {
+  font-size: 24px;
+  color: #333;
+  margin-bottom: 15px;
+  font-weight: 600;
+}
+
+.no-video-placeholder p,
+.loading-placeholder p {
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 10px;
+  max-width: 500px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e5e5e5;
+  border-top: 3px solid #6B7280;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 15px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Right Sidebar - Narrow for testing */
+.right-sidebar {
+  width: 320px;
+  background: white;
+  margin: 20px;
+  margin-left: 10px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 15px 20px;
+  border-bottom: 2px solid #e5e5e5;
+  background: #fafafa;
+}
+
+.sidebar-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  color: #333;
+}
+
+.testing-notice {
+  background: #FEF3C7;
+  color: #92400E;
+  padding: 8px 12px;
+  margin: 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  border-left: 3px solid #F59E0B;
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+}
+
+/* Component list in sidebar */
+.component-item {
+  padding: 10px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  border-left: 3px solid #6B7280;
+}
+
+.component-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.component-number {
+  font-weight: 600;
+  color: #1a1a1a;
+  font-size: 13px;
+}
+
+.component-stats {
+  font-size: 11px;
+  color: #999;
+}
+
+.component-content {
+  font-size: 12px;
+  color: #666;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+/* Comment Selection Popup - Phase 2.2 */
+.comment-selection-popup {
+  position: fixed;
+  background: white;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 12px;
+  z-index: 1000;
+  max-width: 200px;
+}
+
+.comment-popup-text {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.comment-popup-button {
+  background: #3B82F6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  width: 100%;
+  transition: background-color 0.2s;
+}
+
+.comment-popup-button:hover {
+  background: #2563EB;
+}
+
+/* Comment highlights in editor with numbering */
+.comment-highlight {
+  background-color: #FEF3C7;
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+  display: inline;
+  transition: all 0.2s ease;
+}
+
+.comment-highlight:hover {
+  background-color: #FDE68A;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.comment-highlight::after {
+  content: attr(data-comment-number);
+  position: absolute;
+  top: -8px;
+  left: -20px;
+  background: #3B82F6;
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  z-index: 10;
+}
+
+.comment-highlight.highlight-hover {
+  background-color: #FBBF24;
+  box-shadow: 0 0 0 2px #F59E0B;
+}
+
+/* Priority 3: Resolved comments - pale green background with grey numbers */
+.comment-highlight.comment-resolved {
+  background-color: #DCFCE7; /* Resolved: pale green background */
+}
+
+.comment-highlight.comment-resolved::after {
+  background: #9CA3AF; /* Resolved: grey number badge */
+}
+
+.comment-highlight.comment-resolved:hover {
+  background-color: #BBF7D0; /* Slightly darker green on hover */
+}
+
+/* Comment loading and success animations */
+.comment-highlight.creating {
+  animation: pulse-highlight 1s ease-in-out infinite;
+}
+
+.comment-highlight.created {
+  animation: success-highlight 0.5s ease-out;
+}
+
+@keyframes pulse-highlight {
+  0%, 100% { background-color: #FEF3C7; }
+  50% { background-color: #FDE68A; }
+}
+
+@keyframes success-highlight {
+  0% { background-color: #D1FAE5; }
+  100% { background-color: #FEF3C7; }
+}
