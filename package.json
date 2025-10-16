@@ -21,7 +21,7 @@
     "setup:test-users": "tsx scripts/setup-test-users.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.38.0",
+    "@supabase/supabase-js": "^2.75.0",
     "@tanstack/react-query": "^5.90.2",
     "@tiptap/extension-collaboration": "^2.1.13",
     "@tiptap/extension-collaboration-cursor": "^2.1.13",
