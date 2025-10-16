@@ -33,6 +33,22 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
+      - name: Validate lock file sync
+        run: |
+          # Detect package.json/package-lock.json desynchronization
+          if ! npm install --package-lock-only --dry-run &>/dev/null; then
+            echo "❌ ERROR: package-lock.json is out of sync with package.json"
+            echo ""
+            echo "This typically happens when package.json is updated but 'npm install' wasn't run."
+            echo ""
+            echo "To fix this issue:"
+            echo "  1. Run 'npm install' locally"
+            echo "  2. Commit the updated package-lock.json"
+            echo "  3. Push your changes"
+            exit 1
+          fi
+          echo "✅ Lock file is synchronized"
+
       - name: Install dependencies
         run: npm ci
 
