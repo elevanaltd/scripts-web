@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
+import { join } from 'path';
 
 // Mock dependencies
 vi.mock('../../lib/supabase', () => ({
@@ -82,7 +83,7 @@ describe('CommentSidebar - User Profile Cache Management', () => {
     // Will pass once useEffect cleanup is added to CommentSidebar.tsx
 
     const CommentSidebarSource = fs.readFileSync(
-      '/Volumes/HestAI-Projects/eav-orchestrator-mvp/eav-orchestrator-mvp/src/components/comments/CommentSidebar.tsx',
+      join(__dirname, 'CommentSidebar.tsx'),
       'utf8'
     );
 
