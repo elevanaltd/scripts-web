@@ -11,12 +11,13 @@
 
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
+import { join } from 'path';
 
 describe('CommentSidebar - Reconnection Timer Safety', () => {
   it('should include cancellation check in reconnection timer (RED STATE)', () => {
     // Structural test - verify the fix exists in code
     const CommentSidebarSource = fs.readFileSync(
-      '/Volumes/HestAI-Projects/eav-orchestrator-mvp/eav-orchestrator-mvp/src/components/comments/CommentSidebar.tsx',
+      join(__dirname, 'CommentSidebar.tsx'),
       'utf8'
     );
 

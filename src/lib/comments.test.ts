@@ -35,9 +35,9 @@ const CLIENT_PASSWORD = 'test-client-password-123';
 const UNAUTHORIZED_EMAIL = 'test-unauthorized@external.com';
 const UNAUTHORIZED_PASSWORD = 'test-unauthorized-password-123';
 
-// Test data - using existing test project/video/script created by setup script
-// Note: These test IDs are pre-created in the test database - only SCRIPT_ID is currently used
-const TEST_SCRIPT_ID = '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680';
+// Test data - dynamically created in CI environment
+let TEST_SCRIPT_ID: string;
+let TEST_VIDEO_ID: string;
 
 // Session cache to prevent Supabase auth rate limiting (CRITICAL FIX)
 let lastAuthTime = 0;
@@ -69,6 +69,86 @@ async function signInAsUser(client: SupabaseClient, email: string, password: str
 // Import the functions we need to test (will fail until implemented)
 import * as commentsLib from './comments';
 
+// Helper function to ensure test data exists
+async function ensureTestDataExists(client: SupabaseClient<Database>) {
+  // Use admin credentials to create test data
+  await authDelay();
+
+  // Sign in as admin to create test data
+  const { data: authData, error: authError } = await client.auth.signInWithPassword({
+    email: ADMIN_EMAIL,
+    password: ADMIN_PASSWORD
+  });
+
+  if (authError || !authData.user) {
+    console.warn('Warning: Could not authenticate as admin for test data setup');
+    // Use fallback IDs if admin auth fails
+    TEST_VIDEO_ID = '22222222-2222-2222-2222-222222222222';
+    TEST_SCRIPT_ID = '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680';
+    return;
+  }
+
+  // Check if test script already exists
+  const { data: existingScript } = await client
+    .from('scripts')
+    .select('id, video_id')
+    .eq('id', '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680')
+    .maybeSingle();
+
+  if (existingScript) {
+    // Script exists, use it
+    TEST_SCRIPT_ID = existingScript.id;
+    TEST_VIDEO_ID = existingScript.video_id || '22222222-2222-2222-2222-222222222222';
+    return;
+  }
+
+  // Create test project if it doesn't exist
+  await client
+    .from('projects')
+    .upsert({
+      id: '11111111-1111-1111-1111-111111111111',
+      title: 'Test Project',
+      eav_code: 'EAV999',  // Valid format: EAV + 1-3 digits
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' })
+    .select()
+    .single();
+
+  // Create test video if it doesn't exist
+  const { data: video } = await client
+    .from('videos')
+    .upsert({
+      id: '22222222-2222-2222-2222-222222222222',
+      title: 'Test Video',
+      eav_code: 'EAV999',  // Must match the project's eav_code
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'id' })
+    .select()
+    .single();
+
+  TEST_VIDEO_ID = video?.id || '22222222-2222-2222-2222-222222222222';
+
+  // Create test script (using plain_text instead of content)
+  const { data: script, error: scriptError } = await client
+    .from('scripts')
+    .insert({
+      id: '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680',
+      video_id: TEST_VIDEO_ID,
+      plain_text: 'Test script content for integration tests with multiple sentences for testing.',
+      component_count: 1
+    })
+    .select()
+    .single();
+
+  if (scriptError) {
+    console.warn('Warning: Could not create test script:', scriptError.message);
+    // Try to use existing script if insert failed (might already exist)
+    TEST_SCRIPT_ID = '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680';
+  } else {
+    TEST_SCRIPT_ID = script.id;
+  }
+}
+
 // Now run integration tests with proper infrastructure
 describe('Comments Infrastructure - Integration Tests', () => {
   // Single client to avoid GoTrueClient conflicts
@@ -78,10 +158,15 @@ describe('Comments Infrastructure - Integration Tests', () => {
     // Create single client to avoid multiple instance warnings
     supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+    // Ensure test data exists (first time only - will be fast on subsequent calls)
+    await ensureTestDataExists(supabaseClient);
+
     // Clean up any existing test comments before each test
     try {
       await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
-      await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
+      if (TEST_SCRIPT_ID) {
+        await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
+      }
     } catch {
       // Cleanup might fail if no admin access, but that's OK
     }
@@ -92,7 +177,9 @@ describe('Comments Infrastructure - Integration Tests', () => {
     // Use admin to ensure we can clean up
     try {
       await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
-      await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
+      if (TEST_SCRIPT_ID) {
+        await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
+      }
     } catch {
       // Cleanup might fail if no admin access, but that's OK
     }
@@ -646,13 +733,18 @@ describe('Comments CRUD Functions - TDD Phase', () => {
 
   beforeEach(async () => {
     supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Ensure test data exists for CRUD tests as well
+    await ensureTestDataExists(supabaseClient);
   });
 
   afterEach(async () => {
     // Cleanup test comments
     try {
       await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
-      await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
+      if (TEST_SCRIPT_ID) {
+        await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
+      }
     } catch {
       // Cleanup might fail but that's OK
     }

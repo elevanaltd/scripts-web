@@ -21,7 +21,7 @@
     "setup:test-users": "tsx scripts/setup-test-users.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.38.0",
+    "@supabase/supabase-js": "^2.75.0",
     "@tanstack/react-query": "^5.90.2",
     "@tiptap/extension-collaboration": "^2.1.13",
     "@tiptap/extension-collaboration-cursor": "^2.1.13",
@@ -52,7 +52,7 @@
     "eslint": "^8.53.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.4",
-    "happy-dom": "^20.0.0",
+    "happy-dom": "^20.0.2",
     "jsdom": "^23.0.1",
     "typescript": "^5.2.2",
     "vite": "^7.1.7",
