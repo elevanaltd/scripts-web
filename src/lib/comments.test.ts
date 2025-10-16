@@ -38,7 +38,6 @@ const UNAUTHORIZED_PASSWORD = 'test-unauthorized-password-123';
 // Test data - dynamically created in CI environment
 let TEST_SCRIPT_ID: string;
 let TEST_VIDEO_ID: string;
-let TEST_PROJECT_ID: string;
 
 // Session cache to prevent Supabase auth rate limiting (CRITICAL FIX)
 let lastAuthTime = 0;
@@ -84,7 +83,6 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
   if (authError || !authData.user) {
     console.warn('Warning: Could not authenticate as admin for test data setup');
     // Use fallback IDs if admin auth fails
-    TEST_PROJECT_ID = '11111111-1111-1111-1111-111111111111';
     TEST_VIDEO_ID = '22222222-2222-2222-2222-222222222222';
     TEST_SCRIPT_ID = '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680';
     return;
@@ -101,12 +99,11 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
     // Script exists, use it
     TEST_SCRIPT_ID = existingScript.id;
     TEST_VIDEO_ID = existingScript.video_id || '22222222-2222-2222-2222-222222222222';
-    TEST_PROJECT_ID = '11111111-1111-1111-1111-111111111111';
     return;
   }
 
   // Create test project if it doesn't exist
-  const { data: project } = await client
+  await client
     .from('projects')
     .upsert({
       id: '11111111-1111-1111-1111-111111111111',
@@ -116,8 +113,6 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
     }, { onConflict: 'id' })
     .select()
     .single();
-
-  TEST_PROJECT_ID = project?.id || '11111111-1111-1111-1111-111111111111';
 
   // Create test video if it doesn't exist
   const { data: video } = await client
