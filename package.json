@@ -21,6 +21,7 @@
     "setup:test-users": "tsx scripts/setup-test-users.ts"
   },
   "dependencies": {
+    "@eav-ops/shared-lib": "file:../../eav-shared-lib",
     "@supabase/supabase-js": "^2.75.0",
     "@tanstack/react-query": "^5.90.2",
     "@tiptap/extension-collaboration": "^2.1.13",
