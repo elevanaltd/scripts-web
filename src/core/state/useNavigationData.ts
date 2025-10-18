@@ -107,10 +107,10 @@ export function useNavigationData(config?: UseNavigationDataConfig) {
       if (videoError) throw videoError;
 
       // Create set of eav_codes that have videos
-      const eavCodesWithVideos = new Set(videoData?.map(v => v.eav_code) || []);
+      const eavCodesWithVideos = new Set(videoData?.map((v: { eav_code: string }) => v.eav_code) || []);
 
       // Filter projects to only those with videos
-      const projectsWithVideosData = (projectData || []).filter(project =>
+      const projectsWithVideosData = (projectData || []).filter((project: Project) =>
         project.eav_code && eavCodesWithVideos.has(project.eav_code)
       );
 
