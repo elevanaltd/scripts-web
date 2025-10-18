@@ -36,6 +36,8 @@ jobs:
           node-version: '20'
           cache: 'npm'
           registry-url: 'https://npm.pkg.github.com/'
+          scope: '@elevanaltd'
+          always-auth: true
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
