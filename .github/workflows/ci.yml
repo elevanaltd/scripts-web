@@ -62,6 +62,26 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Debug - Verify shared-lib installation
+        run: |
+          echo "=== Checking if @elevanaltd/shared-lib was installed ==="
+          if [ -d "node_modules/@elevanaltd/shared-lib" ]; then
+            echo "✅ Package directory exists"
+            echo ""
+            echo "=== Package.json exports field ==="
+            cat node_modules/@elevanaltd/shared-lib/package.json | grep -A 20 '"exports"'
+            echo ""
+            echo "=== Directory structure ==="
+            ls -la node_modules/@elevanaltd/shared-lib/
+            echo ""
+            echo "=== dist/client structure ==="
+            ls -la node_modules/@elevanaltd/shared-lib/dist/client/ || echo "❌ dist/client/ does not exist"
+          else
+            echo "❌ Package directory does NOT exist"
+            echo "=== Installed @elevanaltd packages ==="
+            ls -la node_modules/@elevanaltd/ || echo "❌ No @elevanaltd scope in node_modules"
+          fi
+
       - name: TypeScript check
         run: npm run typecheck
 
