@@ -58,6 +58,8 @@ jobs:
 
       - name: Install dependencies
         run: npm install  # Using npm install instead of npm ci to generate package-lock.json
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: TypeScript check
         run: npm run typecheck
