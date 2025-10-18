@@ -32,6 +32,13 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
+          registry-url: 'https://npm.pkg.github.com/'
+          scope: '@elevanaltd'
+
+      - name: Configure npm for GitHub Packages
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" >> ~/.npmrc
+          echo "✓ GitHub Packages authentication configured"
 
       - name: Validate lock file sync
         run: |
