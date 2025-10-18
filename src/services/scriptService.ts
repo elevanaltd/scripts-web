@@ -40,6 +40,18 @@ export interface Script {
 // Re-export ComponentData from validation module for type consistency
 export type { ComponentData } from '../lib/validation';
 
+// Database row type for script_components table
+interface ScriptComponentRow {
+  component_number: number;
+  content: string;
+  word_count: number | null;
+  // Additional fields from database table (not used in transformation)
+  id?: string;
+  script_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ScriptServiceErrorInterface {
   message: string;
   code?: string;
@@ -82,7 +94,7 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
       }
 
       // Transform database components to expected format
-      const transformedComponents: ComponentData[] = (components || []).map(comp => ({
+      const transformedComponents: ComponentData[] = (components || []).map((comp: ScriptComponentRow) => ({
         number: comp.component_number,
         content: comp.content,
         wordCount: comp.word_count || 0,
@@ -169,7 +181,7 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
       throw new ScriptServiceError(`Failed to load script components: ${componentsError.message}`, componentsError.code);
     }
 
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
+    const transformedComponents: ComponentData[] = (components || []).map((comp: ScriptComponentRow) => ({
       number: comp.component_number,
       content: comp.content,
       wordCount: comp.word_count || 0,
@@ -263,7 +275,7 @@ export async function saveScript(
     }
 
     // Transform database components to expected format
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
+    const transformedComponents: ComponentData[] = (components || []).map((comp: ScriptComponentRow) => ({
       number: comp.component_number,
       content: comp.content,
       wordCount: comp.word_count || 0,
@@ -371,7 +383,7 @@ export async function getScriptById(scriptId: string): Promise<Script> {
     }
 
     // Transform database components to expected format
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
+    const transformedComponents: ComponentData[] = (components || []).map((comp: ScriptComponentRow) => ({
       number: comp.component_number,
       content: comp.content,
       wordCount: comp.word_count || 0,
@@ -470,7 +482,7 @@ export async function updateScriptStatus(
     }
 
     // Transform components to expected format
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
+    const transformedComponents: ComponentData[] = (components || []).map((comp: ScriptComponentRow) => ({
       number: comp.component_number,
       content: comp.content,
       wordCount: comp.word_count || 0,

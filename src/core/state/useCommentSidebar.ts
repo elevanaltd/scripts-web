@@ -17,6 +17,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useQueryClient } from '@tanstack/react-query';
+import type { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCommentMutations } from './useCommentMutations';
@@ -28,6 +29,18 @@ import {
   updateComment
 } from '../../lib/comments';
 import type { CommentWithUser, CommentThread, CreateCommentData } from '../../types/comments';
+
+// Supabase Realtime postgres_changes payload structure
+// Based on documented Realtime API payload format
+interface RealtimePostgresChangesPayload<T = Record<string, unknown>> {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  new: T;
+  old: T;
+  schema: string;
+  table: string;
+  commit_timestamp: string;
+  errors: string[] | null;
+}
 
 // Types extracted from CommentSidebar
 export type FilterMode = 'all' | 'open' | 'resolved';
@@ -183,7 +196,7 @@ export function useCommentSidebar({
           schema: 'public',
           table: 'comments',
         },
-        async (payload) => {
+        async (payload: RealtimePostgresChangesPayload) => {
           // Refetch comments on any change
           await commentsQuery.refetch();
 
@@ -274,7 +287,7 @@ export function useCommentSidebar({
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === 'SUBSCRIBED') {
           Logger.info('Realtime channel subscribed', { scriptId });
           setConnectionStatus('connected');
