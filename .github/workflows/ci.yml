@@ -11,6 +11,9 @@ jobs:
     name: Quality Gates
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      packages: read  # Required for GitHub Packages authentication
 
     env:
       # Supabase Configuration
