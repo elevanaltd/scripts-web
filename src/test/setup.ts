@@ -10,6 +10,22 @@ import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { resetFactoryIds } from './factories'
 
+// Mock shared library to inject test credentials
+// Resolves 8 environment test failures by using v0.1.5 dependency injection pattern
+vi.mock('@elevanaltd/shared-lib/client', async () => {
+  const actual = await vi.importActual('@elevanaltd/shared-lib/client') as any
+  return {
+    ...actual,
+    createBrowserClient: (url?: string, key?: string) => {
+      // Override with test credentials when not provided
+      return (actual.createBrowserClient as Function)(
+        url ?? 'https://test-project.supabase.co',
+        key ?? 'test-anon-key'
+      )
+    }
+  }
+})
+
 // Extend Vitest matchers with Testing Library DOM matchers
 expect.extend({})
 
