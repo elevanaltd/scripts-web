@@ -13,12 +13,12 @@ import { resetFactoryIds } from './factories'
 // Mock shared library to inject test credentials
 // Resolves 8 environment test failures by using v0.1.5 dependency injection pattern
 vi.mock('@elevanaltd/shared-lib/client', async () => {
-  const actual = await vi.importActual('@elevanaltd/shared-lib/client') as any
+  const actual = await vi.importActual('@elevanaltd/shared-lib/client') as Record<string, unknown>
   return {
     ...actual,
     createBrowserClient: (url?: string, key?: string) => {
       // Override with test credentials when not provided
-      return (actual.createBrowserClient as Function)(
+      return (actual.createBrowserClient as (url?: string, key?: string) => unknown)(
         url ?? 'https://test-project.supabase.co',
         key ?? 'test-anon-key'
       )
