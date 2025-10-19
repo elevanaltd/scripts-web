@@ -13,7 +13,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '../types/database.types';
+import type { Database } from '@elevanaltd/shared-lib/types';
 import type {
   CommentWithUser,
   CommentWithRecovery,

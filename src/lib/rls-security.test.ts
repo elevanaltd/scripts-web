@@ -20,7 +20,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../types/database.types';
+import type { Database } from '@elevanaltd/shared-lib/types';
 
 // Test environment configuration
 const SUPABASE_URL = import.meta.env?.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmmnmy.supabase.co';

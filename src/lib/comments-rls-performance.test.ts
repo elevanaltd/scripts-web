@@ -18,7 +18,7 @@
 
 import { describe, test, expect, beforeEach, afterEach, beforeAll } from 'vitest';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import type { Database } from '../types/database.types';
+import type { Database } from '@elevanaltd/shared-lib/types';
 
 // Test configuration
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmmnmy.supabase.co';
