@@ -6,34 +6,8 @@ export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory
   const env = loadEnv(mode, process.cwd(), '')
 
-  // Test environment: Use fallback credentials for import.meta.env injection
-  const testEnv = process.env.CI ? {
-    VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://test-project.supabase.co',
-    VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QtcHJvamVjdCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MTU2MTY4MDB9.test-mock-anon-key',
-    VITE_SMARTSUITE_API_KEY: process.env.VITE_SMARTSUITE_API_KEY || 'test-mock-smartsuite-key',
-    VITE_SMARTSUITE_WORKSPACE_ID: process.env.VITE_SMARTSUITE_WORKSPACE_ID || 's3qnmox1',
-    VITE_SMARTSUITE_PROJECTS_TABLE: process.env.VITE_SMARTSUITE_PROJECTS_TABLE || '68a8ff5237fde0bf797c05b3',
-    VITE_SMARTSUITE_VIDEOS_TABLE: process.env.VITE_SMARTSUITE_VIDEOS_TABLE || '68b2437a8f1755b055e0a124',
-  } : {
-    VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
-    VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-    VITE_SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'
-  }
-
   return {
   plugins: [react()],
-
-  // CRITICAL: Define import.meta.env.* for test environment
-  // Vite's `define` replaces these at compile time (works in both dev and test)
-  // Without this, import.meta.env.VITE_SUPABASE_URL is undefined in tests
-  define: mode === 'test' ? {
-    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(testEnv.VITE_SUPABASE_URL),
-    'import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY': JSON.stringify(testEnv.VITE_SUPABASE_PUBLISHABLE_KEY),
-    'import.meta.env.VITE_SMARTSUITE_API_KEY': JSON.stringify(testEnv.VITE_SMARTSUITE_API_KEY),
-    'import.meta.env.VITE_SMARTSUITE_WORKSPACE_ID': JSON.stringify(testEnv.VITE_SMARTSUITE_WORKSPACE_ID),
-    'import.meta.env.VITE_SMARTSUITE_PROJECTS_TABLE': JSON.stringify(testEnv.VITE_SMARTSUITE_PROJECTS_TABLE),
-    'import.meta.env.VITE_SMARTSUITE_VIDEOS_TABLE': JSON.stringify(testEnv.VITE_SMARTSUITE_VIDEOS_TABLE),
-  } : {},
   build: {
     rollupOptions: {
       output: {
@@ -100,11 +74,30 @@ export default defineConfig(({ mode }) => {
         minThreads: 1,      // Keep at least one thread alive
         singleThread: false // Allow parallelism within limits
       }
-    }
+    },
 
-    // NOTE: Environment variable injection moved to `define` block above
-    // This ensures import.meta.env.* is available during module imports
-    // See lines 29-36 for the actual injection mechanism
+    // Conditional Supabase configuration:
+    // - CI: Use production Supabase (env vars from GitHub Actions)
+    // - Local: Use local Supabase Docker (isolated testing with seed data)
+    // Run `supabase start` before running tests locally
+    //
+    // CRITICAL FIX: Provide fallback mock credentials to prevent undefined injection
+    // When CI=true but env vars undefined → shared-lib crashes on browser.js:21
+    // Mock credentials are non-functional (safe for commit, test environment only)
+    env: process.env.CI ? {
+      // CI: Use GitHub Actions environment variables with fallback mocks
+      VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || 'https://test-project.supabase.co',
+      VITE_SUPABASE_PUBLISHABLE_KEY: process.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QtcHJvamVjdCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MTU2MTY4MDB9.test-mock-anon-key',
+      VITE_SMARTSUITE_API_KEY: process.env.VITE_SMARTSUITE_API_KEY || 'test-mock-smartsuite-key',
+      VITE_SMARTSUITE_WORKSPACE_ID: process.env.VITE_SMARTSUITE_WORKSPACE_ID || 's3qnmox1',
+      VITE_SMARTSUITE_PROJECTS_TABLE: process.env.VITE_SMARTSUITE_PROJECTS_TABLE || '68a8ff5237fde0bf797c05b3',
+      VITE_SMARTSUITE_VIDEOS_TABLE: process.env.VITE_SMARTSUITE_VIDEOS_TABLE || '68b2437a8f1755b055e0a124',
+    } : {
+      // Local: Use local Supabase Docker instance (seeded via supabase/seed.sql)
+      VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
+      VITE_SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'
+    }
   }
   }
 })
