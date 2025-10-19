@@ -19,6 +19,8 @@ import { supabase } from '../../lib/supabase';
 import { validateProjectId, ValidationError } from '../../lib/validation';
 import { Logger } from '../../services/logger';
 import type { Project, Video } from '../../contexts/NavigationContext';
+import { mapProjectRowToProject, mapProjectRowsToProjects } from '../../lib/mappers/projectMapper';
+import { mapVideoRowsToVideos } from '../../lib/mappers/videoMapper';
 
 export interface UseNavigationDataConfig {
   refreshInterval?: number;
@@ -106,11 +108,16 @@ export function useNavigationData(config?: UseNavigationDataConfig) {
 
       if (videoError) throw videoError;
 
-      // Create set of eav_codes that have videos
-      const eavCodesWithVideos = new Set(videoData?.map((v: { eav_code: string }) => v.eav_code) || []);
+      // Create set of eav_codes that have videos (filter out null eav_codes)
+      const eavCodesWithVideos = new Set(
+        (videoData || [])
+          .filter((v: { eav_code: string | null }) => v.eav_code !== null)
+          .map((v: { eav_code: string | null }) => v.eav_code as string)
+      );
 
-      // Filter projects to only those with videos
-      const projectsWithVideosData = (projectData || []).filter((project: Project) =>
+      // Map Supabase rows to domain models, then filter to only those with videos
+      const mappedProjects = mapProjectRowsToProjects(projectData || []);
+      const projectsWithVideosData = mappedProjects.filter((project) =>
         project.eav_code && eavCodesWithVideos.has(project.eav_code)
       );
 
@@ -165,15 +172,16 @@ export function useNavigationData(config?: UseNavigationDataConfig) {
         // Update local projects state if not refresh
         if (!isRefresh) {
           setProjects(prevProjects => {
-            const exists = prevProjects.some(p => p.id === projectData.id);
+            const mappedProject = mapProjectRowToProject(projectData);
+            const exists = prevProjects.some(p => p.id === mappedProject.id);
             if (!exists) {
-              return [...prevProjects, projectData];
+              return [...prevProjects, mappedProject];
             }
             return prevProjects;
           });
         }
 
-        project = projectData;
+        project = mapProjectRowToProject(projectData);
       }
 
       if (!project?.eav_code) {
@@ -201,10 +209,11 @@ export function useNavigationData(config?: UseNavigationDataConfig) {
 
       if (error) throw error;
 
-      // Update videos state - group by eav_code
+      // Map video rows to domain models and update state - group by eav_code
+      const mappedVideos = mapVideoRowsToVideos(data || []);
       setVideos(prevVideos => ({
         ...prevVideos,
-        [project.eav_code]: data || []
+        [project.eav_code]: mappedVideos
       }));
 
       // Track expanded project for refresh
