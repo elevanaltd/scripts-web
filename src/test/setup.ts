@@ -5,34 +5,6 @@
  * Runs cleanup after each test to prevent state leakage.
  */
 
-/**
- * CRITICAL: Mock import.meta.env BEFORE any module imports
- *
- * Problem: @elevanaltd/shared-lib reads import.meta.env.VITE_SUPABASE_URL
- * at module import time (before Vitest env configuration applies).
- *
- * Solution: setupFiles executes before module imports. Inject environment
- * variables here so they exist when shared-lib browser.js:21 executes.
- *
- * Constitutional Exemption: Test infrastructure properly exempted in TDD hook.
- * Changes validate via dependent test execution (not co-located tests).
- */
-if (typeof import.meta.env === 'undefined') {
-  // @ts-expect-error - Mocking import.meta.env for test environment
-  import.meta.env = {}
-}
-
-// Inject Supabase credentials for shared-lib imports
-import.meta.env.VITE_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://test-project.supabase.co'
-import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QtcHJvamVjdCIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNjAwMDAwMDAwLCJleHAiOjE5MTU2MTY4MDB9.test-mock-anon-key'
-
-// SmartSuite mock credentials (for tests that import smartsuite integration)
-import.meta.env.VITE_SMARTSUITE_API_KEY = import.meta.env.VITE_SMARTSUITE_API_KEY || 'test-mock-smartsuite-key'
-import.meta.env.VITE_SMARTSUITE_WORKSPACE_ID = import.meta.env.VITE_SMARTSUITE_WORKSPACE_ID || 's3qnmox1'
-import.meta.env.VITE_SMARTSUITE_PROJECTS_TABLE = import.meta.env.VITE_SMARTSUITE_PROJECTS_TABLE || '68a8ff5237fde0bf797c05b3'
-import.meta.env.VITE_SMARTSUITE_VIDEOS_TABLE = import.meta.env.VITE_SMARTSUITE_VIDEOS_TABLE || '68b2437a8f1755b055e0a124'
-
-// NOW safe to import modules that depend on import.meta.env
 import { expect, afterEach, beforeEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
