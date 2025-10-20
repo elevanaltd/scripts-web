@@ -64,7 +64,72 @@ export default [
     },
   },
 
-  // Test file overrides (preserve from .eslintrc.cjs)
+  // Test files need Node.js and Vitest globals
+  {
+    files: ['**/*.test.ts', '**/*.test.tsx', '**/test/**/*.ts', '**/test/**/*.tsx'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.es2020,
+        ...globals.node,
+        vi: 'readonly',
+        React: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        test: 'readonly',
+      },
+    },
+  },
+
+  // API routes and scripts need Node.js globals (Vercel serverless + utility scripts)
+  {
+    files: ['api/**/*.ts', 'scripts/**/*.ts'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        HeadersInit: 'readonly', // Fetch API type
+        RequestInit: 'readonly', // Fetch API type
+      },
+    },
+  },
+
+  // Config files need Node.js globals
+  {
+    files: ['vite.config.ts', '*.config.ts', '*.config.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+      },
+    },
+  },
+
+  // Source files using Node.js types (NodeJS namespace, Buffer, process)
+  {
+    files: [
+      '**/ErrorBoundary.tsx',
+      '**/logger.ts',
+      '**/scriptService.ts',
+      '**/CommentPositionTracker.ts',
+      '**/Toast.tsx',
+      '**/useCommentSidebar.ts',
+      '**/useScriptComments.ts',
+      '**/useCommentPositionSync.ts',
+    ],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.node, // Add Node.js globals for these specific files
+        NodeJS: 'readonly', // NodeJS namespace (TypeScript type)
+      },
+    },
+  },
+
+  // Test setup overrides (preserve from .eslintrc.cjs)
   {
     files: ['**/test/setup.ts'],
     rules: {
