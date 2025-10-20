@@ -11,15 +11,19 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { pathToFileURL } from 'node:url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 describe('ESLint Configuration', () => {
   it('should load flat config successfully', async () => {
-    // Attempt to import eslint.config.mjs from project root
-    const configPath = new URL('../../eslint.config.mjs', import.meta.url);
+    // Import eslint.config.mjs from project root
+    const configPath = path.resolve(__dirname, '../../eslint.config.mjs');
 
     try {
-      const config = await import(configPath.href);
+      const config = await import(configPath);
 
       // Flat config exports default array
       expect(config.default).toBeDefined();
@@ -31,10 +35,10 @@ describe('ESLint Configuration', () => {
   });
 
   it('should have TypeScript parser configured', async () => {
-    const configPath = new URL('../../eslint.config.mjs', import.meta.url);
+    const configPath = path.resolve(__dirname, '../../eslint.config.mjs');
 
     try {
-      const { default: configs } = await import(configPath.href);
+      const { default: configs } = await import(configPath);
 
       // Find config with TypeScript parser
       const tsConfig = configs.find((c: unknown) =>
@@ -58,10 +62,10 @@ describe('ESLint Configuration', () => {
   });
 
   it('should have React plugins configured', async () => {
-    const configPath = new URL('../../eslint.config.mjs', import.meta.url);
+    const configPath = path.resolve(__dirname, '../../eslint.config.mjs');
 
     try {
-      const { default: configs } = await import(configPath.href);
+      const { default: configs } = await import(configPath);
 
       // Find config with React plugins
       const reactConfig = configs.find((c: unknown) =>
@@ -84,10 +88,10 @@ describe('ESLint Configuration', () => {
   });
 
   it('should have browser environment configured', async () => {
-    const configPath = new URL('../../eslint.config.mjs', import.meta.url);
+    const configPath = path.resolve(__dirname, '../../eslint.config.mjs');
 
     try {
-      const { default: configs } = await import(configPath.href);
+      const { default: configs } = await import(configPath);
 
       // Find config with browser globals
       const browserConfig = configs.find((c: unknown) =>
