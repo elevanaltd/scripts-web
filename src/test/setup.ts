@@ -10,6 +10,65 @@ import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { resetFactoryIds } from './factories'
 
+/**
+ * BroadcastChannel Polyfill for Node Test Environment
+ *
+ * **Issue**: Node.js BroadcastChannel expects `Event` instances, but Supabase Auth
+ * (used by @elevanaltd/shared-lib) dispatches browser-standard `MessageEvent` instances
+ * for cross-tab session synchronization.
+ *
+ * **Root Cause**: Node's BroadcastChannel implementation rejects MessageEvent:
+ *   TypeError: The "event" argument must be an instance of Event. Received an instance of MessageEvent
+ *    ❯ BroadcastChannel.dispatchEvent node:internal/event_target:757:13
+ *
+ * **Solution**: Stub BroadcastChannel with minimal test-compatible implementation.
+ * In test environment, cross-tab sync isn't needed - we just need to prevent errors.
+ *
+ * **Impact**: Prevents 1,460+ test errors when Supabase Auth initializes BroadcastChannel
+ * for session state synchronization across browser tabs.
+ *
+ * **Constitutional Basis**:
+ * - I7 TDD Discipline: Ensures tests run without errors (RED→GREEN)
+ * - I8 Production Quality: Quality gates enforcement (requirements-steward mandate)
+ * - MINIMAL_INTERVENTION: Polyfill test environment only, no production code changes
+ *
+ * **References**:
+ * - Quality Audit: coordination/reports/003-REPORT-QUALITY-AUDIT-SCRIPTS-WEB.md
+ * - Requirements Ruling: coordination/reports/004-REPORT-REQUIREMENT-STEWARD-AUDIT.md (TD-001)
+ * - Implementation Plan: coordination/workflow-docs/003-DETAILED-IMPLEMENTATION-PLAN-Q2.md
+ */
+class BroadcastChannelStub extends EventTarget {
+  readonly name: string
+  onmessage: ((event: MessageEvent) => void) | null = null
+
+  constructor(name: string) {
+    super()
+    this.name = name
+  }
+
+  postMessage(message: unknown): void {
+    // Synthesize MessageEvent to exercise broadcast logic in tests
+    // This maintains test coverage while avoiding Node.js MessageEvent incompatibility
+    const event = new Event('message') as MessageEvent
+    Object.assign(event, { data: message })
+
+    // Dispatch to addEventListener handlers
+    this.dispatchEvent(event)
+
+    // Also invoke onmessage callback if set
+    if (typeof this.onmessage === 'function') {
+      this.onmessage(event)
+    }
+  }
+
+  close(): void {
+    // Stub: No-op in test environment (no cleanup needed for in-memory stub)
+  }
+}
+
+// Replace Node's incompatible BroadcastChannel with test-compatible stub
+globalThis.BroadcastChannel = BroadcastChannelStub as typeof BroadcastChannel
+
 // Mock shared library to inject test credentials
 // Resolves 8 environment test failures by using v0.1.5 dependency injection pattern
 vi.mock('@elevanaltd/shared-lib/client', async () => {
