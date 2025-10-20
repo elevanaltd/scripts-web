@@ -2,6 +2,9 @@
   "permissions": {
     "additionalDirectories": [
       "/Volumes/HestAI-Projects/eav-ops/eav-shared-lib"
+    ],
+    "allow": [
+      "Read(//Volumes/HestAI-Projects/eav-ops/coordination/workflow-docs/**)"
     ]
   }
 }
