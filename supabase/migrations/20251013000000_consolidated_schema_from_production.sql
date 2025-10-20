@@ -120,7 +120,14 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
 CREATE INDEX IF NOT EXISTS idx_videos_eav_code ON public.videos(eav_code);
 CREATE INDEX IF NOT EXISTS idx_scripts_video_id ON public.scripts(video_id);
 CREATE INDEX IF NOT EXISTS idx_scripts_status ON public.scripts(status);
-CREATE INDEX IF NOT EXISTS idx_script_components_script_id ON public.script_components(script_id);
+
+-- Composite unique index: enforces (script_id, component_number) uniqueness
+-- AND optimizes component retrieval queries (validated via D1.3 benchmarks)
+-- Performance: 0.206ms for 50-component retrieval (99.6% below 50ms target, verified 2025-10-20)
+-- Evidence: coordination/reports/005-REPORT-D1.3-PERFORMANCE-BENCHMARKS.md:142 (EXPLAIN ANALYZE)
+CREATE UNIQUE INDEX IF NOT EXISTS script_components_script_id_component_number_key
+    ON public.script_components (script_id, component_number);
+
 CREATE INDEX IF NOT EXISTS idx_comments_script_id ON public.comments(script_id);
 CREATE INDEX IF NOT EXISTS idx_comments_user_id ON public.comments(user_id);
 CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON public.comments(parent_comment_id);
