@@ -80,15 +80,15 @@ describe('CommentSidebar - User Profile Cache Management', () => {
   // Alternative approach: Test the fix directly without rendering component
   it('should include useEffect for cache cleanup on scriptId change', () => {
     // This is a structural test - verify the fix exists in code
-    // Will pass once useEffect cleanup is added to CommentSidebar.tsx
+    // Cache cleanup is in useCommentSidebar hook (architectural pattern: business logic in hooks)
 
-    const CommentSidebarSource = fs.readFileSync(
-      join(__dirname, 'CommentSidebar.tsx'),
+    const useCommentSidebarSource = fs.readFileSync(
+      join(__dirname, '../../core/state/useCommentSidebar.ts'),
       'utf8'
     );
 
-    // Verify cache cleanup code exists
-    expect(CommentSidebarSource).toContain('userProfileCacheRef.current.clear()');
-    expect(CommentSidebarSource).toContain('User profile cache cleared');
+    // Verify cache cleanup code exists in the hook
+    expect(useCommentSidebarSource).toContain('userProfileCacheRef.current.clear()');
+    expect(useCommentSidebarSource).toContain('User profile cache cleared');
   });
 });
