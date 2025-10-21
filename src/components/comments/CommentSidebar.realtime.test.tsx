@@ -208,13 +208,54 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         return mockChannel;
       });
 
+      // TD-005: Mock user profile for enrichment (verify-then-cache pattern)
+      mockUserProfiles.set('user-2', {
+        id: 'user-2',
+        email: 'user2@example.com',
+        display_name: 'User Two',
+        role: null
+      });
+
+      // TD-005: Sequential mock - initial fetch returns empty, refetch returns new comment (verify-then-cache)
+      const { getComments } = await import('../../lib/comments');
+      vi.mocked(getComments)
+        .mockResolvedValueOnce({
+          success: true,
+          data: [], // Initial fetch: no comments
+          error: undefined,
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          data: [{
+            id: 'new-comment-1',
+            scriptId: 'script-123',
+            userId: 'user-2',
+            content: 'New comment from another user',
+            startPosition: 10,
+            endPosition: 20,
+            parentCommentId: null,
+            resolvedAt: null,
+            resolvedBy: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            user: {
+              id: 'user-2',
+              email: 'user2@example.com',
+            },
+          }], // Refetch after INSERT: new comment appears
+          error: undefined,
+        });
+
       renderWithProviders(<CommentSidebar scriptId="script-123" />);
 
-      // Wait for subscription setup
+      // Wait for subscription setup and verify empty state
       await waitFor(() => {
         expect(mockChannel.subscribe).toHaveBeenCalled();
         expect(realtimeCallback).not.toBeNull();
       });
+
+      // TD-005: Verify comment NOT present before realtime event (prevents false positive)
+      expect(screen.queryByText('New comment from another user')).not.toBeInTheDocument();
 
       // Simulate INSERT event with RAW database data (no user JOIN)
       const rawCommentData = {
@@ -242,10 +283,13 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         });
       });
 
-      // New comment should appear in the UI
+      // TD-005: New comment appears after refetch completes (verify-then-cache pattern)
       await waitFor(() => {
         expect(screen.getByText('New comment from another user')).toBeInTheDocument();
       });
+
+      // TD-005: Verify refetch was called (2 total: initial mount + realtime refetch)
+      expect(getComments).toHaveBeenCalledTimes(2);
     });
 
     it('should not add duplicate comments if INSERT event for existing comment', async () => {
@@ -389,6 +433,19 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         deleted: false
       };
 
+      // TD-005: Update mock to return updated comment after refetch (verify-then-cache pattern)
+      const updatedComment: CommentWithUser = {
+        ...existingComment,
+        content: updatedCommentData.content,
+        updatedAt: updatedCommentData.updated_at,
+      };
+
+      vi.mocked(getComments).mockResolvedValue({
+        success: true,
+        data: [updatedComment],
+        error: undefined,
+      });
+
       await act(async () => {
         realtimeCallback!({
           eventType: 'UPDATE',
@@ -398,11 +455,14 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         });
       });
 
-      // Updated content should appear
+      // TD-005: Updated content appears after refetch completes (verify-then-cache pattern)
       await waitFor(() => {
         expect(screen.queryByText('Original content')).not.toBeInTheDocument();
         expect(screen.getByText('Updated content')).toBeInTheDocument();
       });
+
+      // TD-005: Verify refetch was called (2 total: initial mount + realtime refetch)
+      expect(getComments).toHaveBeenCalledTimes(2);
     });
 
     it('should update resolved status when comment is resolved via Realtime', async () => {
@@ -467,6 +527,20 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         deleted: false
       };
 
+      // TD-005: Update mock to return resolved comment after refetch (verify-then-cache pattern)
+      const resolvedComment: CommentWithUser = {
+        ...unresolvedComment,
+        resolvedAt: resolvedCommentData.resolved_at,
+        resolvedBy: resolvedCommentData.resolved_by,
+        updatedAt: resolvedCommentData.updated_at,
+      };
+
+      vi.mocked(getComments).mockResolvedValue({
+        success: true,
+        data: [resolvedComment],
+        error: undefined,
+      });
+
       await act(async () => {
         realtimeCallback!({
           eventType: 'UPDATE',
@@ -476,11 +550,14 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         });
       });
 
-      // Should show as resolved
+      // TD-005: Resolved status appears after refetch completes (verify-then-cache pattern)
       await waitFor(() => {
         const commentCard = screen.getByText('Needs review').closest('[role="article"]');
         expect(commentCard).toHaveClass('comment-resolved');
       });
+
+      // TD-005: Verify refetch was called (2 total: initial mount + realtime refetch)
+      expect(getComments).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -516,12 +593,15 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         },
       };
 
+      // TD-005: Use dynamic mock that changes after DELETE event (verify-then-cache pattern)
+      let commentsData = [existingComment];
+
       const { getComments } = await import('../../lib/comments');
-      vi.mocked(getComments).mockResolvedValue({
+      vi.mocked(getComments).mockImplementation(async () => ({
         success: true,
-        data: [existingComment],
+        data: commentsData,
         error: undefined,
-      });
+      }));
 
       renderWithProviders(<CommentSidebar scriptId="script-123" />);
 
@@ -529,20 +609,42 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         expect(screen.getByText('Will be deleted')).toBeInTheDocument();
       });
 
-      // Simulate DELETE event
+      // TD-005: Update data ref so refetch returns empty array (verify-then-cache pattern)
+      commentsData = []; // Comment deleted, refetch returns empty
+
+      // Simulate DELETE event with raw database format
       await act(async () => {
         realtimeCallback!({
           eventType: 'DELETE',
-          old: existingComment,
+          old: {
+            id: existingComment.id,
+            script_id: existingComment.scriptId,
+            user_id: existingComment.userId,
+            content: existingComment.content,
+            start_position: existingComment.startPosition,
+            end_position: existingComment.endPosition,
+            highlighted_text: existingComment.highlightedText || null,
+            parent_comment_id: existingComment.parentCommentId,
+            resolved_at: existingComment.resolvedAt,
+            resolved_by: existingComment.resolvedBy,
+            created_at: existingComment.createdAt,
+            updated_at: existingComment.updatedAt,
+            deleted: false
+          },
           new: {},
           errors: null,
         });
+        // Wait for refetch to complete (verify-then-cache pattern)
+        await new Promise((resolve) => setTimeout(resolve, 100));
       });
 
-      // Comment should disappear
+      // TD-005: Comment disappears after refetch completes (verify-then-cache pattern)
       await waitFor(() => {
         expect(screen.queryByText('Will be deleted')).not.toBeInTheDocument();
       });
+
+      // TD-005: Verify refetch was called (2 total: initial mount + realtime refetch)
+      expect(getComments).toHaveBeenCalledTimes(2);
     });
 
     it('should not error if DELETE event for non-existent comment', async () => {
