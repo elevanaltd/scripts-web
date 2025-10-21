@@ -1,20 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-
-interface Project {
-  id: string;
-  title: string;
-  eav_code: string;
-  due_date?: string;
-}
-
-interface Video {
-  id: string;
-  eav_code: string;
-  title: string;
-  main_stream_status?: string;
-  vo_stream_status?: string;
-}
+import { mapProjectRowsToProjects } from '../lib/mappers/projectMapper';
+import { mapVideoRowsToVideos } from '../lib/mappers/videoMapper';
+import type { Project } from '../lib/mappers/projectMapper';
+import type { Video } from '../lib/mappers/videoMapper';
 
 export function TestDataPanel() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -38,7 +27,8 @@ export function TestDataPanel() {
         .order('title');
 
       if (error) throw error;
-      setProjects(data || []);
+      const mappedProjects = mapProjectRowsToProjects(data || []);
+      setProjects(mappedProjects);
 
     } catch (err) {
       setError(`Failed to load projects: ${err}`);
@@ -64,7 +54,8 @@ export function TestDataPanel() {
         .order('title');
 
       if (error) throw error;
-      setVideos(data || []);
+      const mappedVideos = mapVideoRowsToVideos(data || []);
+      setVideos(mappedVideos);
 
     } catch (err) {
       setError(`Failed to load videos: ${err}`);

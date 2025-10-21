@@ -16,16 +16,17 @@ import { join } from 'path';
 describe('CommentSidebar - Reconnection Timer Safety', () => {
   it('should include cancellation check in reconnection timer (RED STATE)', () => {
     // Structural test - verify the fix exists in code
-    const CommentSidebarSource = fs.readFileSync(
-      join(__dirname, 'CommentSidebar.tsx'),
+    // Reconnection logic is in useCommentSidebar hook (architectural pattern: business logic in hooks)
+    const useCommentSidebarSource = fs.readFileSync(
+      join(__dirname, '../../core/state/useCommentSidebar.ts'),
       'utf8'
     );
 
     // Verify cancellation ref exists
-    expect(CommentSidebarSource).toContain('isCancelledRef');
+    expect(useCommentSidebarSource).toContain('isCancelledRef');
     // Verify cancellation check before timer execution
-    expect(CommentSidebarSource).toContain('if (isCancelledRef.current)');
+    expect(useCommentSidebarSource).toContain('if (isCancelledRef.current)');
     // Verify cancellation is set on unmount
-    expect(CommentSidebarSource).toContain('isCancelledRef.current = true');
+    expect(useCommentSidebarSource).toContain('isCancelledRef.current = true');
   });
 });

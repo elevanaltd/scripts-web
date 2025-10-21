@@ -17,6 +17,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import DOMPurify from 'dompurify';
 import { useQueryClient } from '@tanstack/react-query';
+import type { REALTIME_SUBSCRIBE_STATES } from '@supabase/supabase-js';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useCommentMutations } from './useCommentMutations';
@@ -28,6 +29,18 @@ import {
   updateComment
 } from '../../lib/comments';
 import type { CommentWithUser, CommentThread, CreateCommentData } from '../../types/comments';
+
+// Supabase Realtime postgres_changes payload structure
+// Based on documented Realtime API payload format
+interface RealtimePostgresChangesPayload<T = Record<string, unknown>> {
+  eventType: 'INSERT' | 'UPDATE' | 'DELETE';
+  new: T;
+  old: T;
+  schema: string;
+  table: string;
+  commit_timestamp: string;
+  errors: string[] | null;
+}
 
 // Types extracted from CommentSidebar
 export type FilterMode = 'all' | 'open' | 'resolved';
@@ -183,11 +196,11 @@ export function useCommentSidebar({
           schema: 'public',
           table: 'comments',
         },
-        async (payload) => {
+        async (payload: RealtimePostgresChangesPayload) => {
           // Refetch comments on any change
           await commentsQuery.refetch();
 
-          // Handle different event types
+          // Handle different event types with optimistic cache updates
           if (payload.eventType === 'INSERT') {
             const commentData = payload.new as {
               id: string;
@@ -223,6 +236,15 @@ export function useCommentSidebar({
                 updatedAt: commentData.updated_at,
                 user: userProfile || undefined
               };
+
+              // Optimistically update cache (query key includes userId for cache isolation)
+              queryClient.setQueryData(['comments', scriptId, currentUser?.id], (old: CommentWithUser[] | undefined) => {
+                if (!old) return old;
+                // Check if comment already exists (prevent duplicates)
+                const exists = old.some(c => c.id === commentWithUser.id);
+                if (exists) return old;
+                return [...old, commentWithUser];
+              });
 
               Logger.info('Realtime comment added', { commentId: commentWithUser.id });
             } catch (err) {
@@ -264,17 +286,30 @@ export function useCommentSidebar({
                 user: userProfile || undefined
               };
 
+              // Optimistically update cache (query key includes userId for cache isolation)
+              queryClient.setQueryData(['comments', scriptId, currentUser?.id], (old: CommentWithUser[] | undefined) => {
+                if (!old) return old;
+                return old.map(c => c.id === commentWithUser.id ? commentWithUser : c);
+              });
+
               Logger.info('Realtime comment updated', { commentId: commentWithUser.id });
             } catch (err) {
               Logger.error('Failed to enrich realtime update', { error: err, commentId: commentData.id });
             }
           } else if (payload.eventType === 'DELETE') {
             const deletedComment = payload.old as { id: string };
+
+            // Optimistically update cache (query key includes userId for cache isolation)
+            queryClient.setQueryData(['comments', scriptId, currentUser?.id], (old: CommentWithUser[] | undefined) => {
+              if (!old) return old;
+              return old.filter(c => c.id !== deletedComment.id);
+            });
+
             Logger.info('Realtime comment deleted', { commentId: deletedComment.id });
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
         if (status === 'SUBSCRIBED') {
           Logger.info('Realtime channel subscribed', { scriptId });
           setConnectionStatus('connected');
@@ -339,8 +374,11 @@ export function useCommentSidebar({
   // Extract: Lines 366-409 from CommentSidebar (~43 LOC)
 
   const threads = useMemo((): CommentThreadWithNumber[] => {
-    // Filter by resolved status
+    // Filter by resolved status (with null/undefined safety)
     const filteredComments = comments.filter(comment => {
+      // Safety check: filter out null/undefined comments
+      if (!comment) return false;
+
       if (filterMode === 'open') {
         return !comment.resolvedAt;
       } else if (filterMode === 'resolved') {
@@ -353,9 +391,9 @@ export function useCommentSidebar({
     const commentThreads: CommentThreadWithNumber[] = [];
     const threadMap = new Map<string, CommentThreadWithNumber>();
 
-    // Collect parent comments sorted by position
+    // Collect parent comments sorted by position (with additional safety check)
     const parentComments = filteredComments
-      .filter(comment => !comment.parentCommentId)
+      .filter(comment => comment && !comment.parentCommentId)
       .sort((a, b) => a.startPosition - b.startPosition);
 
     parentComments.forEach((comment, index) => {

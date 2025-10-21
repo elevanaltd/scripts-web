@@ -1,17 +1,10 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { User } from '@supabase/supabase-js'
+import { User, AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import { Logger } from '../services/logger'
-
-interface UserProfile {
-  id: string
-  email: string
-  display_name: string | null
-  role: 'admin' | 'employee' | 'client' | null
-  created_at: string
-  client_filter?: string | null
-}
+import { mapUserProfileRowToUserProfile } from '../lib/mappers/userProfileMapper'
+import type { UserProfile } from '../lib/mappers/userProfileMapper'
 
 interface AuthContextType {
   currentUser: User | null
@@ -50,7 +43,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle()  // Use maybeSingle to avoid 406 errors
 
       if (data) {
-        setUserProfile(data)
+        const mappedProfile = mapUserProfileRowToUserProfile(data)
+        setUserProfile(mappedProfile)
       } else if (userEmail) {
         // Create profile if it doesn't exist
         const { data: newProfile, error: insertError } = await supabase
@@ -66,8 +60,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (insertError) {
           Logger.error('[AuthContext] Error creating user profile', { error: insertError.message })
-        } else {
-          setUserProfile(newProfile)
+        } else if (newProfile) {
+          const mappedNewProfile = mapUserProfileRowToUserProfile(newProfile)
+          setUserProfile(mappedNewProfile)
         }
       }
     } catch (err) {
@@ -132,7 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (_event: AuthChangeEvent, session: Session | null) => {
         if (!mounted) return
 
         setCurrentUser(session?.user ?? null)

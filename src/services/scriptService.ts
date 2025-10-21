@@ -18,6 +18,8 @@ import {
   ValidationError,
   type ComponentData
 } from '../lib/validation';
+import { mapScriptRowToScript, mapScriptComponentRow } from '../lib/mappers/scriptMapper';
+import type { Json } from '@elevanaltd/shared-lib/types';
 
 // Workflow status enum for scripts
 export type ScriptWorkflowStatus = 'pend_start' | 'draft' | 'in_review' | 'rework' | 'approved' | 'reuse';
@@ -39,6 +41,7 @@ export interface Script {
 
 // Re-export ComponentData from validation module for type consistency
 export type { ComponentData } from '../lib/validation';
+
 
 export interface ScriptServiceErrorInterface {
   message: string;
@@ -81,18 +84,11 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
         throw new ScriptServiceError(`Failed to load script components: ${componentsError.message}`, componentsError.code);
       }
 
-      // Transform database components to expected format
-      const transformedComponents: ComponentData[] = (components || []).map(comp => ({
-        number: comp.component_number,
-        content: comp.content,
-        wordCount: comp.word_count || 0,
-        hash: generateContentHash(comp.content)
-      }));
+      // Transform database components to expected format using mapper
+      const transformedComponents: ComponentData[] = (components || []).map(mapScriptComponentRow);
 
-      return {
-        ...existingScript,
-        components: transformedComponents
-      };
+      // Map script row to domain model with components
+      return mapScriptRowToScript(existingScript, transformedComponents);
     }
 
     // Check if user has permission to create scripts
@@ -169,17 +165,10 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
       throw new ScriptServiceError(`Failed to load script components: ${componentsError.message}`, componentsError.code);
     }
 
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
-      number: comp.component_number,
-      content: comp.content,
-      wordCount: comp.word_count || 0,
-      hash: generateContentHash(comp.content)
-    }));
+    const transformedComponents: ComponentData[] = (components || []).map(mapScriptComponentRow);
 
-    return {
-      ...script,
-      components: transformedComponents
-    };
+    // Map script row to domain model with components
+    return mapScriptRowToScript(script, transformedComponents);
   } catch (error) {
     if (error instanceof ScriptServiceError) {
       throw error;
@@ -263,17 +252,10 @@ export async function saveScript(
     }
 
     // Transform database components to expected format
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
-      number: comp.component_number,
-      content: comp.content,
-      wordCount: comp.word_count || 0,
-      hash: generateContentHash(comp.content)
-    }));
+    const transformedComponents: ComponentData[] = (components || []).map(mapScriptComponentRow);
 
-    return {
-      ...updatedScript,
-      components: transformedComponents
-    };
+    // Map script row to domain model with components
+    return mapScriptRowToScript(updatedScript, transformedComponents);
   } catch (error) {
     if (error instanceof ScriptServiceError) {
       throw error;
@@ -307,18 +289,16 @@ export async function saveScriptWithComponents(
     const { data: rpcData, error: rpcError } = await supabase
       .rpc('save_script_with_components', {
         p_script_id: validatedScriptId,
-        p_yjs_state: yjsState,
+        p_yjs_state: yjsState ? Buffer.from(yjsState).toString('base64') : '',
         p_plain_text: validatedPlainText,
-        p_components: validatedComponents
+        p_components: validatedComponents as unknown as Json
       });
 
     // If RPC exists and works, use it
     if (!rpcError && rpcData && rpcData.length > 0) {
       const updatedScript = rpcData[0];
-      return {
-        ...updatedScript,
-        components
-      };
+      // Map the RPC result to domain model
+      return mapScriptRowToScript(updatedScript, components);
     }
 
     // Fallback to non-atomic updates if RPC doesn't exist yet
@@ -371,17 +351,10 @@ export async function getScriptById(scriptId: string): Promise<Script> {
     }
 
     // Transform database components to expected format
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
-      number: comp.component_number,
-      content: comp.content,
-      wordCount: comp.word_count || 0,
-      hash: generateContentHash(comp.content)
-    }));
+    const transformedComponents: ComponentData[] = (components || []).map(mapScriptComponentRow);
 
-    return {
-      ...script,
-      components: transformedComponents
-    };
+    // Map script row to domain model with components
+    return mapScriptRowToScript(script, transformedComponents);
   } catch (error) {
     if (error instanceof ScriptServiceError) {
       throw error;
@@ -470,17 +443,10 @@ export async function updateScriptStatus(
     }
 
     // Transform components to expected format
-    const transformedComponents: ComponentData[] = (components || []).map(comp => ({
-      number: comp.component_number,
-      content: comp.content,
-      wordCount: comp.word_count || 0,
-      hash: generateContentHash(comp.content)
-    }));
+    const transformedComponents: ComponentData[] = (components || []).map(mapScriptComponentRow);
 
-    return {
-      ...updatedScript,
-      components: transformedComponents
-    };
+    // Map script row to domain model with components
+    return mapScriptRowToScript(updatedScript, transformedComponents);
   } catch (error) {
     if (error instanceof ScriptServiceError) {
       throw error;

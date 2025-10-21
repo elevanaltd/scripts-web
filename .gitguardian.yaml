@@ -1,0 +1,30 @@
+# GitGuardian Configuration - Test Mock Exclusions
+# Prevents false positives on non-functional test credentials
+
+version: 2
+
+# Exclude specific paths from scanning
+paths-ignore:
+  - "src/test/**"          # All test infrastructure files
+  - "**/*.test.ts"         # Test files
+  - "**/*.test.tsx"        # Test files (React)
+  - "**/*.spec.ts"         # Spec files
+  - "**/*.spec.tsx"        # Spec files (React)
+  - "**/vitest.config.ts"  # Test configuration
+  - "**/vite.config.ts"    # Build configuration (may contain test env)
+
+# Exclude specific patterns (test mock identifiers)
+matches-ignore:
+  - name: Test Mock Credentials
+    match: test-mock-.*     # Any credential marked "test-mock-*"
+
+  - name: Test Project URLs
+    match: test-project\.supabase\.co  # Test Supabase URLs
+
+  - name: Test JWT Tokens
+    match: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QtcHJvamVjdCI.*
+    # JWT tokens with "test-project" in payload
+
+# Document exclusion rationale
+# These are non-functional test fixtures used in test environments only.
+# Real credentials are managed via environment variables (not committed to git).

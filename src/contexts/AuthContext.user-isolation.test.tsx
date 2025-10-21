@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import React from 'react'
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { AuthProvider, useAuth } from './AuthContext'
 import { supabase } from '../lib/supabase'
 
@@ -36,7 +37,7 @@ describe('AuthContext - User Cache Isolation (P1 Security Fix)', () => {
       error: null,
     })
 
-    vi.spyOn(supabase.auth, 'onAuthStateChange').mockImplementation((callback) => {
+    vi.spyOn(supabase.auth, 'onAuthStateChange').mockImplementation((callback: (event: AuthChangeEvent, session: Session | null) => void) => {
       // Store callback for manual triggering
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (global as any).__authCallback = callback
