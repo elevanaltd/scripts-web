@@ -21,8 +21,8 @@
     "setup:test-users": "tsx scripts/setup-test-users.ts"
   },
   "dependencies": {
-    "@elevanaltd/shared-lib": "^0.1.6",
-    "@supabase/supabase-js": "^2.75.0",
+    "@elevanaltd/shared-lib": "^0.1.7",
+    "@supabase/supabase-js": "^2.76.1",
     "@tanstack/react-query": "^5.90.2",
     "@tiptap/extension-collaboration": "^2.1.13",
     "@tiptap/extension-collaboration-cursor": "^2.1.13",
