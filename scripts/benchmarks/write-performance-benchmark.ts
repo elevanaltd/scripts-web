@@ -137,7 +137,7 @@ async function benchmarkUpdates(
   return calculatePercentiles(latencies);
 }
 
-async function verifyIndexUsage(client: SupabaseClient): Promise<string> {
+async function verifyIndexUsage(_client: SupabaseClient): Promise<string> {
   console.log('\n🔍 Verifying composite index usage...\n');
 
   // Use service role for EXPLAIN ANALYZE (requires elevated permissions)
@@ -160,7 +160,7 @@ async function verifyIndexUsage(client: SupabaseClient): Promise<string> {
         AND deleted = false
       LIMIT 10;
     `
-  }) as { data: string | null; error: any };
+  }) as { data: string | null; error: Error | null };
 
   if (error) {
     // Fallback: Check if index exists
