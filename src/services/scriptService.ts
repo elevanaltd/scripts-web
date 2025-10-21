@@ -302,7 +302,18 @@ export async function saveScriptWithComponents(
     }
 
     // Fallback to non-atomic updates if RPC doesn't exist yet
+    // DIAGNOSTIC: Log actual error to identify why RPC is failing
     console.warn('RPC function not available, using fallback save method');
+    console.error('RPC Error Details:', {
+      hasError: !!rpcError,
+      errorMessage: rpcError?.message,
+      errorCode: rpcError?.code,
+      errorDetails: rpcError?.details,
+      errorHint: rpcError?.hint,
+      hasData: !!rpcData,
+      dataLength: rpcData?.length,
+      fullError: rpcError
+    });
 
     // Use PATCH pattern for safety
     return saveScript(validatedScriptId, {
