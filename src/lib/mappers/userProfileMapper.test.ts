@@ -141,13 +141,13 @@ describe('userProfileMapper', () => {
 
       const result = mapUserProfileRowToUserProfile(supabaseRow);
 
-      expect(result).toEqual({
-        id: 'user-4',
-        email: 'nocreated@example.com',
-        display_name: 'No Created Date',
-        role: 'employee',
-        created_at: new Date().toISOString() // Default to current time
-      });
+      // Verify created_at is set to a valid ISO timestamp (avoid race condition by checking structure)
+      expect(result.id).toBe('user-4');
+      expect(result.email).toBe('nocreated@example.com');
+      expect(result.display_name).toBe('No Created Date');
+      expect(result.role).toBe('employee');
+      expect(result.created_at).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/); // ISO 8601 format
+      expect(new Date(result.created_at).getTime()).toBeGreaterThan(Date.now() - 1000); // Within last second
     });
 
     it('should throw error if user profile row is null', () => {
