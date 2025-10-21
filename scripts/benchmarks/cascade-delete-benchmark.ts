@@ -39,42 +39,6 @@ async function signInAsAdmin(client: SupabaseClient) {
   return data.user.id;
 }
 
-async function createTestComments(
-  client: SupabaseClient,
-  adminUserId: string,
-  parentCount: number,
-  repliesPerParent: number
-) {
-  // Create parent comments
-  const parents = [];
-  for (let i = 0; i < parentCount; i++) {
-    const { data } = await client.from('comments').insert({
-      script_id: TEST_SCRIPT_ID,
-      user_id: adminUserId,
-      content: `Parent comment ${i}`,
-      start_position: i * 10,
-      end_position: i * 10 + 5
-    }).select().single();
-    if (data) parents.push(data);
-  }
-
-  // Create replies
-  for (const parent of parents) {
-    for (let j = 0; j < repliesPerParent; j++) {
-      await client.from('comments').insert({
-        script_id: TEST_SCRIPT_ID,
-        user_id: adminUserId,
-        content: `Reply ${j} to ${parent.content}`,
-        parent_comment_id: parent.id,
-        start_position: 0,
-        end_position: 5
-      });
-    }
-  }
-
-  return parents;
-}
-
 async function measureCascadeDelete(
   client: SupabaseClient,
   parentId: string
@@ -116,7 +80,8 @@ async function runBenchmark() {
     console.log('- 10 replies per parent');
     console.log('- Total: 100 comments\n');
 
-    const parents = await createTestComments(client, adminUserId, 10, 10);
+    // Note: Initial dataset not used; each iteration creates fresh parent+replies
+    // This ensures consistent measurement without data accumulation
 
     // Run benchmark: 50 iterations
     console.log('⏱️  Running benchmark (50 iterations)...\n');
