@@ -1,6 +1,14 @@
 import type { Tables } from '@elevanaltd/shared-lib/types';
 
 /**
+ * Extended type for videos query results with joined scripts data
+ * Used when querying videos with script status for navigation color coding
+ */
+type VideoRowWithScripts = Tables<'videos'> & {
+  scripts?: Array<{ status?: string }> | { status?: string };
+};
+
+/**
  * Domain model for Video used in UI/State
  * Maps from Supabase Tables<'videos'> with nullability conversions
  * CRITICAL: eav_code is mandatory - videos without eav_code are filtered
@@ -40,7 +48,7 @@ export function mapVideoRowToVideo(row: Tables<'videos'>): Video {
     main_stream_status: row.main_stream_status ?? undefined,
     vo_stream_status: row.vo_stream_status ?? undefined,
     // Preserve joined script data for navigation color coding
-    scripts: (row as any).scripts
+    scripts: (row as VideoRowWithScripts).scripts
   };
 }
 
