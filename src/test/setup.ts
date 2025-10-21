@@ -134,6 +134,16 @@ global.IntersectionObserver = vi.fn().mockImplementation(() => ({
   takeRecords: vi.fn().mockReturnValue([]),
 }))
 
+// Mock requestAnimationFrame and cancelAnimationFrame (used by TipTap editor)
+// Node.js doesn't have these browser APIs - polyfill with setTimeout/clearTimeout
+global.requestAnimationFrame = vi.fn((callback: (time: number) => void) => {
+  return setTimeout(() => callback(Date.now()), 0) as unknown as number
+})
+
+global.cancelAnimationFrame = vi.fn((id: number) => {
+  clearTimeout(id)
+})
+
 // Suppress console errors in tests (unless debugging)
 // Comment out to see actual errors during test development
 const originalConsoleError = console.error
