@@ -24,6 +24,7 @@ vi.mock('../../lib/comments', () => ({
   createComment: vi.fn(),
   resolveComment: vi.fn(),
   deleteComment: vi.fn(),
+  clearUserProfileCache: vi.fn(),
 }));
 
 // Mock Supabase with Realtime channel support

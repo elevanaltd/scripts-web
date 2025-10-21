@@ -126,4 +126,25 @@ export class Logger {
   static error(message: string, metadata?: LogMetadata): void {
     Logger.log(LogLevel.ERROR, 'ERROR', message, metadata)
   }
+
+  /**
+   * Log security-related events (attacks, validation failures, suspicious activity)
+   * Always logged at ERROR level for visibility in production
+   * TODO: Integrate with security monitoring service (Sentry, DataDog, etc.)
+   */
+  static security(message: string, metadata?: LogMetadata): void {
+    const securityPrefix = '[SECURITY]'
+    const timestamp = Logger.formatTimestamp()
+    const sanitizedMetadata = metadata ? Logger.sanitizeData(metadata) : undefined
+
+    // Always log security events to console.error for visibility
+    if (sanitizedMetadata) {
+      console.error(securityPrefix, timestamp, message, sanitizedMetadata)
+    } else {
+      console.error(securityPrefix, timestamp, message)
+    }
+
+    // TODO: Send to security monitoring service
+    // Example: Sentry.captureMessage(message, { level: 'error', extra: sanitizedMetadata })
+  }
 }

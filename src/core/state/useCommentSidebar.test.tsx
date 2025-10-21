@@ -66,6 +66,7 @@ vi.mock('./useScriptCommentsQuery', () => ({
 vi.mock('../../lib/comments', () => ({
   createComment: vi.fn(),
   updateComment: vi.fn(),
+  clearUserProfileCache: vi.fn(),
 }));
 
 // Test wrapper with QueryClientProvider

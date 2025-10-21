@@ -37,6 +37,7 @@ vi.mock('../../lib/comments', () => ({
   unresolveComment: vi.fn(),
   deleteComment: vi.fn(),
   updateComment: vi.fn(),
+  clearUserProfileCache: vi.fn(),
 }));
 
 // Mock Logger

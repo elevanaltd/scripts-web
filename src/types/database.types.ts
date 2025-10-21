@@ -106,6 +106,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "comments_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "scripts_with_eav"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "comments_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
@@ -113,6 +120,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      hard_delete_audit_log: {
+        Row: {
+          created_at: string
+          deleted_at: string
+          descendant_count: number
+          id: string
+          operator_email: string | null
+          operator_id: string
+          reason: string | null
+          root_comment_id: string
+          script_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string
+          descendant_count: number
+          id?: string
+          operator_email?: string | null
+          operator_id: string
+          reason?: string | null
+          root_comment_id: string
+          script_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string
+          descendant_count?: number
+          id?: string
+          operator_email?: string | null
+          operator_id?: string
+          reason?: string | null
+          root_comment_id?: string
+          script_id?: string | null
+        }
+        Relationships: []
       }
       projects: {
         Row: {
@@ -181,6 +224,13 @@ export type Database = {
             columns: ["script_id"]
             isOneToOne: false
             referencedRelation: "scripts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "script_components_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: false
+            referencedRelation: "scripts_with_eav"
             referencedColumns: ["id"]
           },
         ]
@@ -314,6 +364,39 @@ export type Database = {
       }
     }
     Views: {
+      scripts_with_eav: {
+        Row: {
+          component_count: number | null
+          created_at: string | null
+          eav_code: string | null
+          id: string | null
+          main_stream_status: string | null
+          plain_text: string | null
+          production_type: string | null
+          status: string | null
+          updated_at: string | null
+          video_id: string | null
+          video_title: string | null
+          vo_stream_status: string | null
+          yjs_state: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scripts_video_id_fkey"
+            columns: ["video_id"]
+            isOneToOne: true
+            referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "videos_eav_code_fkey"
+            columns: ["eav_code"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["eav_code"]
+          },
+        ]
+      }
       user_accessible_scripts: {
         Row: {
           access_type: string | null
@@ -370,9 +453,19 @@ export type Database = {
           id: string
         }[]
       }
+      get_user_accessible_comment_ids: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          comment_id: string
+        }[]
+      }
       get_user_role: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      hard_delete_comment_tree: {
+        Args: { p_comment_id: string; p_reason?: string }
+        Returns: Json
       }
       json_matches_schema: {
         Args: { instance: Json; schema: Json }
@@ -402,7 +495,14 @@ export type Database = {
           p_yjs_state: string
         }
         Returns: {
-          like: Database["public"]["Tables"]["scripts"]["Row"]
+          component_count: number | null
+          created_at: string | null
+          id: string
+          plain_text: string | null
+          status: string
+          updated_at: string | null
+          video_id: string | null
+          yjs_state: string | null
         }[]
       }
       update_script_status: {
