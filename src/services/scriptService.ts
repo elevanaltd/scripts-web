@@ -268,10 +268,17 @@ export async function saveScript(
 }
 
 /**
- * LEGACY: Save script with components using RPC function
+ * Save script with components using atomic RPC function
  *
- * @deprecated Use saveScript() with PATCH pattern instead for concurrency safety
- * This function remains for backward compatibility with RPC-based saves
+ * Ensures atomic save: all-or-nothing persistence for script + components
+ * Uses database trigger with transaction-scoped context variable for write protection
+ *
+ * @param scriptId - UUID of script to update
+ * @param yjsState - Y.js document state (Uint8Array | null)
+ * @param plainText - Extracted plain text for search/display
+ * @param components - Component array for atomic persistence
+ * @returns Complete updated script with components
+ * @throws ScriptServiceError if RPC fails (no silent fallback - fail-fast)
  */
 export async function saveScriptWithComponents(
   scriptId: string,
@@ -285,7 +292,7 @@ export async function saveScriptWithComponents(
     const validatedPlainText = validateScriptContent(plainText);
     const validatedComponents = validateComponentArray(components);
 
-    // Try to use atomic RPC function first
+    // Call atomic RPC function for component persistence
     const { data: rpcData, error: rpcError } = await supabase
       .rpc('save_script_with_components', {
         p_script_id: validatedScriptId,
@@ -294,33 +301,32 @@ export async function saveScriptWithComponents(
         p_components: validatedComponents as unknown as Json
       });
 
-    // If RPC exists and works, use it
-    if (!rpcError && rpcData && rpcData.length > 0) {
-      const updatedScript = rpcData[0];
-      // Map the RPC result to domain model
-      return mapScriptRowToScript(updatedScript, components);
+    // FAIL-FAST: RPC errors indicate architectural problems that must be fixed
+    // No silent fallback - components MUST be saved atomically or fail visibly
+    if (rpcError) {
+      throw new ScriptServiceError(
+        `Component save failed: ${rpcError.message}`,
+        rpcError.code,
+        {
+          hint: rpcError.hint || 'Components could not be saved. Please try again or contact support.',
+          details: rpcError.details
+        }
+      );
     }
 
-    // Fallback to non-atomic updates if RPC doesn't exist yet
-    // DIAGNOSTIC: Log actual error to identify why RPC is failing
-    console.warn('RPC function not available, using fallback save method');
-    console.error('RPC Error Details:', {
-      hasError: !!rpcError,
-      errorMessage: rpcError?.message,
-      errorCode: rpcError?.code,
-      errorDetails: rpcError?.details,
-      errorHint: rpcError?.hint,
-      hasData: !!rpcData,
-      dataLength: rpcData?.length,
-      fullError: rpcError
-    });
+    if (!rpcData || rpcData.length === 0) {
+      throw new ScriptServiceError(
+        'Component save failed: No data returned from database',
+        'PGRST_NO_DATA',
+        {
+          hint: 'The save operation completed but returned no data. This may indicate a permission issue.'
+        }
+      );
+    }
 
-    // Use PATCH pattern for safety
-    return saveScript(validatedScriptId, {
-      yjs_state: yjsState,
-      plain_text: validatedPlainText,
-      component_count: validatedComponents.length
-    });
+    // Success - map RPC result to domain model
+    const updatedScript = rpcData[0];
+    return mapScriptRowToScript(updatedScript, components);
   } catch (error) {
     if (error instanceof ScriptServiceError) {
       throw error;
