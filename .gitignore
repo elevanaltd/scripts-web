@@ -50,6 +50,8 @@ temp/
 # Vitest
 coverage/
 .coord
+vitest-*.json
+vitest-report*.json
 
 # Supabase temporary files
 supabase/.temp/
