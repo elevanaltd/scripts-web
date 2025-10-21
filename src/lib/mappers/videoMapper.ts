@@ -11,6 +11,7 @@ export interface Video {
   title: string;
   main_stream_status?: string; // null → undefined conversion
   vo_stream_status?: string; // null → undefined conversion
+  scripts?: Array<{ status?: string }> | { status?: string }; // joined script data for status color coding
 }
 
 /**
@@ -37,7 +38,9 @@ export function mapVideoRowToVideo(row: Tables<'videos'>): Video {
     title: row.title,
     // Convert null to undefined for UI compatibility
     main_stream_status: row.main_stream_status ?? undefined,
-    vo_stream_status: row.vo_stream_status ?? undefined
+    vo_stream_status: row.vo_stream_status ?? undefined,
+    // Preserve joined script data for navigation color coding
+    scripts: (row as any).scripts
   };
 }
 
