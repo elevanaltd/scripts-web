@@ -61,6 +61,7 @@ vi.mock('../../lib/comments', () => ({
     data: [],
     error: undefined,
   }),
+  clearUserProfileCache: vi.fn(),
 }));
 
 // Mock auth context

@@ -38,6 +38,7 @@ vi.mock('../../contexts/AuthContext', () => ({
 vi.mock('../../lib/comments', () => ({
   getComments: vi.fn().mockResolvedValue({ success: true, data: [], error: null }),
   createComment: vi.fn(),
+  clearUserProfileCache: vi.fn(),
 }));
 
 vi.mock('../../utils/errorHandling', () => ({
@@ -88,7 +89,8 @@ describe('CommentSidebar - User Profile Cache Management', () => {
     );
 
     // Verify cache cleanup code exists in the hook
-    expect(useCommentSidebarSource).toContain('userProfileCacheRef.current.clear()');
+    // Pattern: clearUserProfileCache() function call in useEffect cleanup
+    expect(useCommentSidebarSource).toContain('clearUserProfileCache()');
     expect(useCommentSidebarSource).toContain('User profile cache cleared');
   });
 });

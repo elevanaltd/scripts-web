@@ -26,7 +26,8 @@ import { Logger } from '../../services/logger';
 import { useErrorHandling, getUserFriendlyErrorMessage } from '../../utils/errorHandling';
 import {
   createComment as createCommentInDB,
-  updateComment
+  updateComment,
+  clearUserProfileCache
 } from '../../lib/comments';
 import type { CommentWithUser, CommentThread, CreateCommentData } from '../../types/comments';
 import { validateRealtimePayload } from '../../lib/security/realtimeValidation';
@@ -236,6 +237,16 @@ export function useCommentSidebar({
     // - commentsQuery: prevents subscription churn (refetch() method is stable)
     // - currentUser: subscription doesn't depend on user identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptId]);
+
+  // ========== CACHE CLEANUP ==========
+  // Clear user profile cache when scriptId changes to prevent memory leak
+  // BLOCKING Issue #2: Cache was accumulating profiles from all scripts forever
+  useEffect(() => {
+    return () => {
+      clearUserProfileCache();
+      Logger.info('User profile cache cleared', { scriptId });
+    };
   }, [scriptId]);
 
   // ========== THREADING & FILTERING ==========

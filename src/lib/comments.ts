@@ -31,6 +31,14 @@ const userProfileCache = new Map<string, {
   role: string | null;
 }>();
 
+/**
+ * Clear the user profile cache
+ * Should be called when changing scripts to prevent memory accumulation
+ */
+export function clearUserProfileCache(): void {
+  userProfileCache.clear();
+}
+
 // Result types for consistent API responses
 export interface CommentResult<T = unknown> {
   success: boolean;
