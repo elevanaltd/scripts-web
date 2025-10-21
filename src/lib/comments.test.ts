@@ -849,7 +849,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
   });
 
-  describe.skip('updateComment Function - TDD (WILL FAIL)', () => {
+  describe('updateComment Function', () => {
     test('should update comment content and return updated comment', async () => {
       // Setup: Create comment first
       const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
@@ -861,7 +861,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
         end_position: 10
       }).select().single();
 
-      // This will fail - function doesn't exist
+      // Call updateComment function (implemented at line 357)
       const result = await commentsLib.updateComment(
         supabaseClient,
         comment!.id,
@@ -883,7 +883,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
         end_position: 10
       }).select().single();
 
-      // This will fail - function doesn't exist
+      // Call resolveComment function (implemented at line 433)
       const result = await commentsLib.resolveComment(supabaseClient, comment!.id, adminUserId);
 
       expect(result.success).toBe(true);
