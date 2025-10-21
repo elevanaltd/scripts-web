@@ -72,4 +72,4 @@ package-lock.json.backup
 
 # TypeScript incremental builds
 *.tsbuildinfo
-.claude/settings.local.json
+.claude/
