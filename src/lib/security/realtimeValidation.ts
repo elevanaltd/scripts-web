@@ -63,14 +63,17 @@ export function validateRealtimePayload(
   payload: RealtimePostgresChangesPayload<Record<string, unknown>>,
   context: ValidationContext
 ): boolean {
+  // Determine which payload to validate (DELETE uses 'old', others use 'new')
+  const data = payload.eventType === 'DELETE' ? payload.old : payload.new;
+
   // Layer 1: Basic payload structure validation
-  if (!payload.new?.id || !payload.new?.script_id) {
+  if (!data?.id || !data?.script_id) {
     Logger.warn('Malformed realtime payload - missing required fields', {
       code: SecurityEventCode.MALFORMED_PAYLOAD,
       eventType: payload.eventType,
-      hasNew: !!payload.new,
-      hasId: !!payload.new?.id,
-      hasScriptId: !!payload.new?.script_id,
+      hasData: !!data,
+      hasId: !!data?.id,
+      hasScriptId: !!data?.script_id,
       table: payload.table,
       timestamp: new Date().toISOString(),
     });
@@ -78,13 +81,13 @@ export function validateRealtimePayload(
   }
 
   // Layer 2: Script ID validation (prevent cross-script contamination)
-  if (payload.new.script_id !== context.currentScriptId) {
+  if (data.script_id !== context.currentScriptId) {
     Logger.info('Realtime event for different script - ignored', {
       code: SecurityEventCode.CROSS_SCRIPT_CONTAMINATION,
       expected: context.currentScriptId,
-      received: payload.new.script_id,
+      received: data.script_id,
       eventType: payload.eventType,
-      commentId: payload.new.id,
+      commentId: data.id,
       timestamp: new Date().toISOString(),
     });
     return false;
@@ -100,8 +103,8 @@ export function validateRealtimePayload(
       Logger.warn('Stale realtime event - possible replay attack', {
         code: SecurityEventCode.REPLAY_ATTACK,
         eventType: payload.eventType,
-        commentId: payload.new.id,
-        scriptId: payload.new.script_id,
+        commentId: data.id,
+        scriptId: data.script_id,
         age: now - eventTimestamp,
         maxAge: maxAgeMs,
         timestamp: new Date().toISOString(),
@@ -114,8 +117,8 @@ export function validateRealtimePayload(
     Logger.info('Realtime event missing timestamp', {
       code: SecurityEventCode.MISSING_TIMESTAMP,
       eventType: payload.eventType,
-      commentId: payload.new.id,
-      scriptId: payload.new.script_id,
+      commentId: data.id,
+      scriptId: data.script_id,
       timestamp: new Date().toISOString(),
     });
   }

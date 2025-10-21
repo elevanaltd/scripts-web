@@ -67,7 +67,12 @@ describe('validateRealtimePayload', () => {
     });
 
     it('should return true for valid DELETE event', () => {
-      const deletePayload = { ...validPayload, eventType: 'DELETE' as const };
+      const deletePayload = {
+        ...validPayload,
+        eventType: 'DELETE' as const,
+        old: validPayload.new, // DELETE uses 'old' field
+        new: {},
+      };
       const result = validateRealtimePayload(deletePayload, validContext);
       expect(result).toBe(true);
     });

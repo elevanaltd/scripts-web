@@ -29,6 +29,7 @@ import {
   updateComment
 } from '../../lib/comments';
 import type { CommentWithUser, CommentThread, CreateCommentData } from '../../types/comments';
+import { validateRealtimePayload } from '../../lib/security/realtimeValidation';
 
 // Supabase Realtime postgres_changes payload structure
 // Based on documented Realtime API payload format
@@ -129,55 +130,10 @@ export function useCommentSidebar({
   const [deleteConfirming, setDeleteConfirming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // User profile cache (prevents N+1 queries)
-  const userProfileCacheRef = useRef<Map<string, {
-    id: string;
-    email: string;
-    displayName: string | null;
-    role: string | null;
-  }>>(new Map());
-
-  // Clear cache when scriptId changes (memory leak prevention)
-  useEffect(() => {
-    userProfileCacheRef.current.clear();
-    Logger.info('User profile cache cleared', { scriptId });
-  }, [scriptId]);
-
   // ========== REALTIME SUBSCRIPTION ==========
   // Extract: Lines 148-364 from CommentSidebar (~208 LOC)
   // Preserves: Gap G6 error handling (exponential backoff, connection resilience)
-
-  // Fetch user profile with caching
-  const fetchUserProfileCached = useCallback(async (userId: string) => {
-    const cached = userProfileCacheRef.current.get(userId);
-    if (cached) return cached;
-
-    try {
-      const { data: userProfile, error: userError } = await supabase
-        .from('user_profiles')
-        .select('id, email, display_name, role')
-        .eq('id', userId)
-        .single();
-
-      if (userError) {
-        Logger.error('Failed to fetch user profile', { error: userError, userId });
-        return null;
-      }
-
-      const profileData = {
-        id: userProfile.id,
-        email: userProfile.email,
-        displayName: userProfile.display_name,
-        role: userProfile.role
-      };
-      userProfileCacheRef.current.set(userId, profileData);
-
-      return profileData;
-    } catch (err) {
-      Logger.error('Exception fetching user profile', { error: err, userId });
-      return null;
-    }
-  }, []);
+  // TD-005 SECURITY FIX: Verify-then-cache pattern replaces optimistic updates
 
   // Realtime subscription effect
   // Critical-Engineer: consulted for dependency array stability (Issue #2)
@@ -197,116 +153,27 @@ export function useCommentSidebar({
           table: 'comments',
         },
         async (payload: RealtimePostgresChangesPayload) => {
-          // Refetch comments on any change
+          // TD-005 SECURITY FIX: Verify-then-cache pattern
+          // Validate payload BEFORE any processing (defense-in-depth)
+          if (!validateRealtimePayload(payload, {
+            currentScriptId: scriptId,
+            currentUserId: currentUser?.id
+          })) {
+            // Validation failed - security event already logged by validator
+            return; // Reject event, do not proceed with cache update
+          }
+
+          // Server-side refetch for RLS validation
+          // This is the ONLY way cache gets updated - no optimistic updates
           await commentsQuery.refetch();
 
-          // Handle different event types with optimistic cache updates
-          if (payload.eventType === 'INSERT') {
-            const commentData = payload.new as {
-              id: string;
-              script_id: string;
-              user_id: string;
-              content: string;
-              start_position: number;
-              end_position: number;
-              highlighted_text: string | null;
-              parent_comment_id: string | null;
-              resolved_at: string | null;
-              resolved_by: string | null;
-              created_at: string;
-              updated_at: string;
-            };
-
-            if (commentData.script_id !== scriptId) return;
-
-            try {
-              const userProfile = await fetchUserProfileCached(commentData.user_id);
-              const commentWithUser: CommentWithUser = {
-                id: commentData.id,
-                scriptId: commentData.script_id,
-                userId: commentData.user_id,
-                content: commentData.content,
-                startPosition: commentData.start_position,
-                endPosition: commentData.end_position,
-                highlightedText: commentData.highlighted_text || undefined,
-                parentCommentId: commentData.parent_comment_id,
-                resolvedAt: commentData.resolved_at,
-                resolvedBy: commentData.resolved_by,
-                createdAt: commentData.created_at,
-                updatedAt: commentData.updated_at,
-                user: userProfile || undefined
-              };
-
-              // Optimistically update cache (query key includes userId for cache isolation)
-              queryClient.setQueryData(['comments', scriptId, currentUser?.id], (old: CommentWithUser[] | undefined) => {
-                if (!old) return old;
-                // Check if comment already exists (prevent duplicates)
-                const exists = old.some(c => c.id === commentWithUser.id);
-                if (exists) return old;
-                return [...old, commentWithUser];
-              });
-
-              Logger.info('Realtime comment added', { commentId: commentWithUser.id });
-            } catch (err) {
-              Logger.error('Failed to enrich realtime comment', { error: err, commentId: commentData.id });
-            }
-          } else if (payload.eventType === 'UPDATE') {
-            const commentData = payload.new as {
-              id: string;
-              script_id: string;
-              user_id: string;
-              content: string;
-              start_position: number;
-              end_position: number;
-              highlighted_text: string | null;
-              parent_comment_id: string | null;
-              resolved_at: string | null;
-              resolved_by: string | null;
-              created_at: string;
-              updated_at: string;
-            };
-
-            if (commentData.script_id !== scriptId) return;
-
-            try {
-              const userProfile = await fetchUserProfileCached(commentData.user_id);
-              const commentWithUser: CommentWithUser = {
-                id: commentData.id,
-                scriptId: commentData.script_id,
-                userId: commentData.user_id,
-                content: commentData.content,
-                startPosition: commentData.start_position,
-                endPosition: commentData.end_position,
-                highlightedText: commentData.highlighted_text || undefined,
-                parentCommentId: commentData.parent_comment_id,
-                resolvedAt: commentData.resolved_at,
-                resolvedBy: commentData.resolved_by,
-                createdAt: commentData.created_at,
-                updatedAt: commentData.updated_at,
-                user: userProfile || undefined
-              };
-
-              // Optimistically update cache (query key includes userId for cache isolation)
-              queryClient.setQueryData(['comments', scriptId, currentUser?.id], (old: CommentWithUser[] | undefined) => {
-                if (!old) return old;
-                return old.map(c => c.id === commentWithUser.id ? commentWithUser : c);
-              });
-
-              Logger.info('Realtime comment updated', { commentId: commentWithUser.id });
-            } catch (err) {
-              Logger.error('Failed to enrich realtime update', { error: err, commentId: commentData.id });
-            }
-          } else if (payload.eventType === 'DELETE') {
-            const deletedComment = payload.old as { id: string };
-
-            // Optimistically update cache (query key includes userId for cache isolation)
-            queryClient.setQueryData(['comments', scriptId, currentUser?.id], (old: CommentWithUser[] | undefined) => {
-              if (!old) return old;
-              return old.filter(c => c.id !== deletedComment.id);
-            });
-
-            Logger.info('Realtime comment deleted', { commentId: deletedComment.id });
-          }
+          // Cache automatically updated via TanStack Query refetch mechanism
+          // No manual queryClient.setQueryData() needed - verify-then-cache achieved
+          Logger.info('Realtime event processed', {
+            eventType: payload.eventType,
+            commentId: payload.new?.id || payload.old?.id,
+            scriptId: payload.new?.script_id || payload.old?.script_id
+          });
         }
       )
       .subscribe((status: REALTIME_SUBSCRIBE_STATES) => {
@@ -367,8 +234,9 @@ export function useCommentSidebar({
     // Intentionally exclude unstable dependencies:
     // - reconnectionTimer: prevents infinite loop
     // - commentsQuery: prevents subscription churn (refetch() method is stable)
+    // - currentUser: subscription doesn't depend on user identity changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptId, fetchUserProfileCached]);
+  }, [scriptId]);
 
   // ========== THREADING & FILTERING ==========
   // Extract: Lines 366-409 from CommentSidebar (~43 LOC)
