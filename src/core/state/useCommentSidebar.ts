@@ -419,7 +419,7 @@ export function useCommentSidebar({
       scriptId,
       content: commentText.trim(),
       startPosition: 0,
-      endPosition: 0,
+      endPosition: 1,
       parentCommentId: null,
       highlightedText: undefined,
     };

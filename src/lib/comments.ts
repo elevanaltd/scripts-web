@@ -701,7 +701,7 @@ function validateCommentData(data: CreateCommentData): string | null {
     return 'Start position must be non-negative';
   }
 
-  if (data.endPosition < data.startPosition) {
+  if (data.endPosition <= data.startPosition) {
     return 'End position must be greater than start position';
   }
 
