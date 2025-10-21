@@ -118,11 +118,11 @@ describe('Logger Service', () => {
         safe: 'this is ok'
       }
 
-      Logger.info('User action', sensitiveData)
+      Logger.warn('User action', sensitiveData)
 
       // Should sanitize sensitive fields
-      expect(mockConsole.info).toHaveBeenCalledWith(
-        expect.stringMatching(/\[INFO\]/),
+      expect(mockConsole.warn).toHaveBeenCalledWith(
+        expect.stringMatching(/\[WARN\]/),
         'User action',
         expect.objectContaining({
           password: '[REDACTED]',
