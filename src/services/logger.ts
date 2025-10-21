@@ -30,7 +30,7 @@ export class Logger {
   }
 
   private static get currentLogLevel(): LogLevel {
-    return Logger.isProduction ? LogLevel.INFO : LogLevel.DEBUG
+    return Logger.isProduction ? LogLevel.WARN : LogLevel.DEBUG
   }
 
   private static formatTimestamp(): string {
