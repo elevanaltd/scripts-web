@@ -455,6 +455,8 @@ export async function resolveComment(
       userId: comment.user_id,
       startPosition: comment.start_position,
       endPosition: comment.end_position,
+      resolvedAt: comment.resolved_at,
+      resolvedBy: comment.resolved_by,
       createdAt: comment.created_at,
       updatedAt: comment.updated_at,
       user: Array.isArray(comment.user) && comment.user.length > 0 ? comment.user[0] : comment.user || undefined
