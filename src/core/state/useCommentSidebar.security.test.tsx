@@ -568,16 +568,16 @@ describe('TD-005: Cache Poisoning Security Tests', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
     });
 
-    // ASSERTION: Comment remains in cache (DELETE event rejected due to validation failure)
+    // ASSERTION: Comment remains in cache (DELETE event ignored before validation)
     expect(result.current.threads).toEqual(initialThreads);
     expect(result.current.threads.length).toBe(1);
 
-    // ASSERTION: Malformed payload logged
-    expect(console.warn).toHaveBeenCalled();
-    const warnCall = vi.mocked(console.warn).mock.calls.find(call =>
-      call.join(' ').includes('Malformed realtime payload')
+    // ASSERTION: DELETE event logged as INFO (application uses soft deletes)
+    expect(console.info).toHaveBeenCalled();
+    const infoCall = vi.mocked(console.info).mock.calls.find(call =>
+      call.join(' ').includes('Ignoring hard DELETE event')
     );
-    expect(warnCall).toBeDefined();
+    expect(infoCall).toBeDefined();
   });
 
   /**

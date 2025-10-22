@@ -610,45 +610,35 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         expect(screen.getByText('Will be deleted')).toBeInTheDocument();
       });
 
-      // TD-005: Update data ref so refetch returns empty array (verify-then-cache pattern)
-      commentsData = []; // Comment deleted, refetch returns empty
+      // Record initial call count before DELETE event
+      const initialCallCount = vi.mocked(getComments).mock.calls.length;
 
       // Simulate DELETE event with raw database format
+      // Note: payload.old may not have script_id (replica identity = default)
       await act(async () => {
         realtimeCallback!({
           eventType: 'DELETE',
           old: {
             id: existingComment.id,
-            script_id: existingComment.scriptId,
-            user_id: existingComment.userId,
-            content: existingComment.content,
-            start_position: existingComment.startPosition,
-            end_position: existingComment.endPosition,
-            highlighted_text: existingComment.highlightedText || null,
-            parent_comment_id: existingComment.parentCommentId,
-            resolved_at: existingComment.resolvedAt,
-            resolved_by: existingComment.resolvedBy,
-            created_at: existingComment.createdAt,
-            updated_at: existingComment.updatedAt,
-            deleted: false
+            // script_id may be missing (replica identity = default sends only PK)
           },
           new: {},
           errors: null,
         });
-        // Wait for refetch to complete (verify-then-cache pattern)
+        // Wait to ensure no refetch occurs
         await new Promise((resolve) => setTimeout(resolve, 100));
       });
 
-      // TD-005: Comment disappears after refetch completes (verify-then-cache pattern)
+      // DELETE event should be ignored - comment remains visible
       await waitFor(() => {
-        expect(screen.queryByText('Will be deleted')).not.toBeInTheDocument();
+        expect(screen.getByText('Will be deleted')).toBeInTheDocument();
       });
 
-      // TD-005: Verify refetch was called (2 total: initial mount + realtime refetch)
-      expect(getComments).toHaveBeenCalledTimes(2);
+      // Verify refetch was NOT called (DELETE events are ignored)
+      expect(getComments).toHaveBeenCalledTimes(initialCallCount);
     });
 
-    it('should not error if DELETE event for non-existent comment', async () => {
+    it('should gracefully ignore DELETE events without script_id', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let realtimeCallback: ((payload: any) => void) | null = null;
 
@@ -660,26 +650,35 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
         return mockChannel;
       });
 
+      const { getComments } = await import('../../lib/comments');
+      vi.mocked(getComments).mockResolvedValue({
+        success: true,
+        data: [],
+        error: undefined,
+      });
+
       renderWithProviders(<CommentSidebar scriptId="script-123" />);
 
       await waitFor(() => {
         expect(mockChannel.subscribe).toHaveBeenCalled();
       });
 
-      // Simulate DELETE for comment that doesn't exist
+      const initialCallCount = vi.mocked(getComments).mock.calls.length;
+
+      // Simulate DELETE with missing script_id (replica identity = default)
+      // This is the scenario that triggered SEC_001_MALFORMED_PAYLOAD warning
       await act(async () => {
         realtimeCallback!({
           eventType: 'DELETE',
-          old: { id: 'non-existent-comment' },
+          old: { id: 'non-existent-comment' }, // Missing script_id
           new: {},
           errors: null,
         });
+        await new Promise((resolve) => setTimeout(resolve, 50));
       });
 
-      // Should not crash or error
-      await waitFor(() => {
-        expect(true).toBe(true); // No-op assertion to wait for async
-      });
+      // Should not crash, error, or trigger refetch
+      expect(getComments).toHaveBeenCalledTimes(initialCallCount);
     });
   });
 
