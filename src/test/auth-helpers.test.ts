@@ -15,7 +15,7 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient, type Session } from '@supabase/supabase-js'
 import type { Database } from '@elevanaltd/shared-lib/types'
 import {
   authenticateAndCache,
@@ -143,11 +143,21 @@ describe('Authentication Helpers - Error Handling', () => {
 
   test('switchToSession should throw error for invalid session', async () => {
     // RED PHASE: Validate error handling for malformed session
-    const invalidSession = {
+    // Using a properly typed but invalid session
+    const invalidSession: Session = {
       access_token: 'invalid-token',
       refresh_token: 'invalid-refresh',
-      user: { id: 'fake-id' },
-    } as any
+      token_type: 'bearer',
+      expires_in: 3600,
+      expires_at: Date.now() + 3600000,
+      user: {
+        id: 'fake-id',
+        app_metadata: {},
+        user_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+      },
+    }
 
     await expect(
       switchToSession(client, invalidSession)
