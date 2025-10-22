@@ -563,7 +563,7 @@ describe('CommentSidebar - Realtime Subscriptions (TDD RED Phase)', () => {
   });
 
   describe('DELETE Event Handling', () => {
-    it('should remove comment from state when DELETE event received', async () => {
+    it('should ignore hard DELETE events (application uses soft deletes)', async () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let realtimeCallback: ((payload: any) => void) | null = null;
 
