@@ -46,7 +46,8 @@ let TEST_PROJECT_ID: string;
 let adminClient: SupabaseClient<Database>;
 
 // Unique test run identifier to avoid eav_code collisions
-const TEST_RUN_ID = `TEST_${Date.now()}`;
+// Format: EAV### (1-3 digits, complies with projects_eav_code_check constraint)
+const TEST_RUN_ID = `EAV${Date.now() % 1000}`;
 
 // Rate limit protection
 let lastAuthTime = 0;
@@ -70,6 +71,14 @@ async function signInAsUser(client: SupabaseClient, email: string, password: str
   if (error) throw error;
 
   return data.user.id;
+}
+
+// Generate SmartSuite-compatible ID (24-character hex string)
+function generateSmartSuiteId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 // Setup test data
@@ -100,8 +109,8 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
   if (existingProjects && existingProjects.length > 0) {
     TEST_PROJECT_ID = existingProjects[0].id;
   } else {
-    // Generate UUID for project ID (database requires client-generated IDs)
-    const projectId = crypto.randomUUID();
+    // Generate SmartSuite-compatible ID (24-character hex string)
+    const projectId = generateSmartSuiteId();
     const { data: newProject, error: projectError } = await client
       .from('projects')
       .insert({
@@ -115,7 +124,7 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
 
     if (projectError) {
       console.warn('Could not create test project:', projectError);
-      TEST_PROJECT_ID = '507f1f77bcf86cd799439022'; // SmartSuite format
+      TEST_PROJECT_ID = '507f1f77bcf86cd799439022'; // SmartSuite format fallback
     } else {
       TEST_PROJECT_ID = newProject.id;
     }
@@ -131,8 +140,8 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
   if (existingVideos && existingVideos.length > 0) {
     TEST_VIDEO_ID = existingVideos[0].id;
   } else {
-    // Generate UUID for video ID (database requires client-generated IDs)
-    const videoId = crypto.randomUUID();
+    // Generate SmartSuite-compatible ID (24-character hex string)
+    const videoId = generateSmartSuiteId();
     const { data: newVideo, error: videoError } = await client
       .from('videos')
       .insert({
@@ -145,7 +154,7 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
 
     if (videoError) {
       console.warn('Could not create test video:', videoError);
-      TEST_VIDEO_ID = '507f1f77bcf86cd799439011'; // SmartSuite format
+      TEST_VIDEO_ID = '507f1f77bcf86cd799439011'; // SmartSuite format fallback
     } else {
       TEST_VIDEO_ID = newVideo.id;
     }
@@ -259,38 +268,22 @@ describe('scriptService - Integration Tests', () => {
     test('should load existing script with components', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      // Create script with components
-      const { data: createdScript } = await adminClient
-        .from('scripts')
-        .insert({
-          video_id: TEST_VIDEO_ID,
-          plain_text: 'Component 1\nComponent 2',
-          component_count: 2
-        })
-        .select('id')
-        .single();
+      // Create script first
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
-      // Create components
-      await adminClient
-        .from('script_components')
-        .insert([
-          {
-            script_id: createdScript!.id,
-            component_number: 1,
-            content: 'Component 1',
-            word_count: 2,
-            content_hash: generateContentHash('Component 1')
-          },
-          {
-            script_id: createdScript!.id,
-            component_number: 2,
-            content: 'Component 2',
-            word_count: 2,
-            content_hash: generateContentHash('Component 2')
-          }
-        ]);
+      // Save with components using proper function (database enforces this)
+      await saveScriptWithComponents(
+        initialScript.id,
+        null,
+        'Component 1\nComponent 2',
+        [
+          { number: 1, content: 'Component 1', wordCount: 2, hash: generateContentHash('Component 1') },
+          { number: 2, content: 'Component 2', wordCount: 2, hash: generateContentHash('Component 2') }
+        ],
+        adminClient
+      );
 
-      // Load via service
+      // Load via service to verify components are loaded
       const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       expect(script.components).toHaveLength(2);
@@ -384,16 +377,14 @@ describe('scriptService - Integration Tests', () => {
 
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
-      // Create a component manually
-      await adminClient
-        .from('script_components')
-        .insert({
-          script_id: initialScript.id,
-          component_number: 1,
-          content: 'Test component',
-          word_count: 2,
-          content_hash: generateContentHash('Test component')
-        });
+      // Create component using proper function (database enforces this)
+      await saveScriptWithComponents(
+        initialScript.id,
+        null,
+        'Test component',
+        [{ number: 1, content: 'Test component', wordCount: 2, hash: generateContentHash('Test component') }],
+        adminClient
+      );
 
       // Save script (should reload components)
       const updatedScript = await saveScript(initialScript.id, {

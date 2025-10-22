@@ -91,7 +91,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
 
   describe('New Security Model - user_accessible_scripts View', () => {
     test('should have user_accessible_scripts view (WILL FAIL - not implemented)', async () => {
-      await switchToSession(supabaseClient, adminSession);
+      await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Test the new view exists and works
       const { data, error } = await supabaseClient
@@ -105,8 +105,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
     });
 
     test('admin should see all scripts in user_accessible_scripts view', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Admin should see the test script
       const { data, error } = await supabaseClient
@@ -122,8 +121,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
     });
 
     test('client should see only assigned scripts in view', async () => {
-      await switchToSession(supabaseClient, clientSession);
-      const clientUserId = getUserId(clientSession);
+      const clientUserId = await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
 
       // Client should see the test script (they're assigned to this project)
       const { data, error } = await supabaseClient
@@ -136,8 +134,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
     });
 
     test('unauthorized user should see no scripts in view', async () => {
-      await switchToSession(supabaseClient, unauthorizedSession);
-      const unauthorizedUserId = getUserId(unauthorizedSession);
+      const unauthorizedUserId = await signInAsUser(supabaseClient, UNAUTHORIZED_EMAIL, UNAUTHORIZED_PASSWORD);
 
       const { data, error } = await supabaseClient
         .from('user_accessible_scripts')
@@ -152,8 +149,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
   describe('Optimized RLS Policies - Single JOIN', () => {
     test.skip('should use single JOIN to user_accessible_scripts (WILL FAIL - not implemented - SKIPPED future optimization)', async () => {
       // Create test comment first
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -163,7 +159,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       });
 
       // Test client access with new optimized policy
-      await switchToSession(supabaseClient, clientSession);
+      await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
 
       // This should succeed with the new optimized policy
       const { result, timeMs } = await measureQueryTime(async () => {
@@ -183,8 +179,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
 
     test('should maintain security boundaries with optimized policies', async () => {
       // Create test comments
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -203,7 +198,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       expect(adminComments).toHaveLength(1);
 
       // Test 2: Client should see comments from assigned projects
-      await switchToSession(supabaseClient, clientSession);
+      await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
       const { data: clientComments, error: clientError } = await supabaseClient
         .from('comments')
         .select('*')
@@ -213,7 +208,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       expect(clientComments).toHaveLength(1);
 
       // Test 3: Unauthorized should see nothing
-      await switchToSession(supabaseClient, unauthorizedSession);
+      await signInAsUser(supabaseClient, UNAUTHORIZED_EMAIL, UNAUTHORIZED_PASSWORD);
       const { data: unauthorizedComments, error: unauthorizedError } = await supabaseClient
         .from('comments')
         .select('*')
@@ -229,8 +224,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
 
     beforeAll(async () => {
       // Establish baseline performance with current complex policies
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create 10 test comments for realistic load
       for (let i = 0; i < 10; i++) {
@@ -244,7 +238,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       }
 
       // Measure current performance (complex 4-table JOIN)
-      await switchToSession(supabaseClient, clientSession);
+      await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
       const { timeMs } = await measureQueryTime(async () => {
         return supabaseClient
           .from('comments')
@@ -256,14 +250,13 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       console.log(`Baseline (current complex RLS) time: ${baselineTimeMs}ms`);
 
       // Clean up for other tests
-      await switchToSession(supabaseClient, adminSession);
+      await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
     });
 
     test('should achieve 30%+ performance improvement with optimized RLS', async () => {
       // Create same test data
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       for (let i = 0; i < 10; i++) {
         await supabaseClient.from('comments').insert({
           script_id: TEST_SCRIPT_ID,
@@ -275,7 +268,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       }
 
       // Measure optimized performance (single JOIN to user_accessible_scripts)
-      await switchToSession(supabaseClient, clientSession);
+      await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
       const { result, timeMs: optimizedTimeMs } = await measureQueryTime(async () => {
         return supabaseClient
           .from('comments')
@@ -299,8 +292,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
     });
 
     test('should maintain performance improvement under load (50 comments)', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create 50 comments to stress test
       const insertPromises = [];
@@ -318,7 +310,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       await Promise.all(insertPromises);
 
       // Measure performance under load
-      await switchToSession(supabaseClient, clientSession);
+      await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
       const { result, timeMs } = await measureQueryTime(async () => {
         return supabaseClient
           .from('comments')
@@ -338,8 +330,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
 
   describe('INSERT/UPDATE/DELETE Performance', () => {
     test('should optimize INSERT operations with simplified policy', async () => {
-      await switchToSession(supabaseClient, clientSession);
-      const clientUserId = getUserId(clientSession);
+      const clientUserId = await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
 
       // Measure INSERT performance with new policy
       const { result, timeMs } = await measureQueryTime(async () => {
@@ -365,8 +356,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
 
     test('should optimize UPDATE operations with simplified policy', async () => {
       // Setup: Create comment to update
-      await switchToSession(supabaseClient, clientSession);
-      const clientUserId = getUserId(clientSession);
+      const clientUserId = await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
       const { data: comment } = await supabaseClient
         .from('comments')
         .insert({
@@ -398,8 +388,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
 
     test('should optimize DELETE operations with simplified policy', async () => {
       // Setup: Create comment to delete
-      await switchToSession(supabaseClient, clientSession);
-      const clientUserId = getUserId(clientSession);
+      const clientUserId = await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
       const { data: comment } = await supabaseClient
         .from('comments')
         .insert({
@@ -433,8 +422,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       // This test ensures the new system behaves identically to current system
       // Only difference should be performance, not security behavior
 
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create test comment
       const { data: comment } = await supabaseClient.from('comments').insert({
@@ -448,7 +436,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       expect(comment).toBeDefined();
 
       // Test client behavior
-      await switchToSession(supabaseClient, clientSession);
+      await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
 
       // Client should be able to read (they're assigned to this project)
       const { data: clientReadComments, error: clientReadError } = await supabaseClient
@@ -460,7 +448,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
       expect(clientReadComments).toHaveLength(1);
 
       // Test unauthorized user
-      await switchToSession(supabaseClient, unauthorizedSession);
+      await signInAsUser(supabaseClient, UNAUTHORIZED_EMAIL, UNAUTHORIZED_PASSWORD);
 
       const { data: unauthorizedComments, error: unauthorizedError } = await supabaseClient
         .from('comments')
@@ -475,8 +463,7 @@ describe.skip('RLS Performance Optimization - TDD Phase', () => {
 
     test('should not break existing application code', async () => {
       // Test that existing comment operations still work
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Standard operations that existing code relies on
       const createOperation = () => supabaseClient.from('comments').insert({
