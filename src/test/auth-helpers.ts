@@ -24,7 +24,9 @@
  */
 
 import type { SupabaseClient, Session } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@elevanaltd/shared-lib/types'
+import { SignJWT } from 'jose'
 
 /**
  * Test User Credentials
@@ -52,6 +54,11 @@ export const TEST_USERS = {
 export const SUPABASE_CONFIG = {
   url: import.meta.env.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmmnmy.supabase.co',
   anonKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY,
+  // Optional: set VITE_SUPABASE_JWT_SECRET (local signing key) to enable minted-JWT tests
+  jwtSecret: (() => {
+    const envAny = import.meta as unknown as { env?: Record<string, string | undefined> }
+    return envAny.env?.['VITE_SUPABASE_JWT_SECRET'] || envAny.env?.['SUPABASE_JWT_SECRET']
+  })(),
 } as const
 
 /**
@@ -236,4 +243,47 @@ export function clearSessionCache(): void {
  */
 export function getCachedSession(userType: 'admin' | 'client' | 'unauthorized'): Session | null {
   return sessionCache[userType]
+}
+
+/**
+ * Mint a short-lived JWT for RLS testing without hitting GoTrue.
+ * Requires VITE_SUPABASE_JWT_SECRET (local signing secret).
+ */
+export async function mintJwt(params: {
+  sub: string
+  email: string
+  role?: 'authenticated' | 'anon' | string
+  jwtSecret: string
+  expiresInSeconds?: number
+}): Promise<string> {
+  const { sub, email, role = 'authenticated', jwtSecret, expiresInSeconds = 2 * 60 * 60 } = params
+  const secret = new TextEncoder().encode(jwtSecret)
+  const now = Math.floor(Date.now() / 1000)
+  return await new SignJWT({
+    sub,
+    email,
+    role,
+    aud: 'authenticated',
+    app_metadata: { provider: 'tests' },
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt(now)
+    .setExpirationTime(now + expiresInSeconds)
+    .setIssuer('tests')
+    .sign(secret)
+}
+
+/**
+ * Create a Supabase client that uses a provided JWT via Authorization header.
+ * No session persistence or token refresh.
+ */
+export function makeRlsClient(
+  url: string,
+  anonKey: string,
+  jwt: string
+): SupabaseClient<Database> {
+  return createClient<Database>(url, anonKey, {
+    global: { headers: { Authorization: `Bearer ${jwt}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  })
 }
