@@ -37,14 +37,11 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || impor
 // Test user credentials (following established pattern)
 const ADMIN_EMAIL = 'test-admin@elevana.com';
 const ADMIN_PASSWORD = 'test-admin-password-123';
-const CLIENT_EMAIL = 'test-client@external.com';
-const CLIENT_PASSWORD = 'test-client-password-123';
-const UNAUTHORIZED_EMAIL = 'test-unauthorized@external.com';
-const UNAUTHORIZED_PASSWORD = 'test-unauthorized-password-123';
 
 // Test data - will be created dynamically
 // Using SmartSuite ID format (24-char hex) to match database schema
 let TEST_VIDEO_ID: string;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 let TEST_PROJECT_ID: string;
 let adminClient: SupabaseClient<Database>;
 
@@ -227,7 +224,8 @@ describe('scriptService - Integration Tests', () => {
       expect(script.id).toContain('readonly');
       expect(script.plain_text).toContain('not been created yet');
       expect(script.plain_text).toContain('administrator');
-      expect((script as any).readonly).toBe(true);
+      // Readonly flag is dynamic property not in type definition
+      expect((script as { readonly?: boolean }).readonly).toBe(true);
     });
 
     test('[RACE CONDITION] should handle concurrent UPSERT calls safely', async () => {
@@ -538,13 +536,13 @@ describe('scriptService - Integration Tests', () => {
 
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
-      // Missing required fields
+      // Missing required fields - intentionally invalid component for validation test
       await expect(
         saveScriptWithComponents(
           initialScript.id,
           null,
           'test',
-          [{ number: 1 } as any], // Invalid component
+          [{ number: 1 } as { number: number; content: string; wordCount: number; hash: string }],
           adminClient
         )
       ).rejects.toThrow();
