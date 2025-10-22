@@ -46,6 +46,10 @@ import type { Database } from '../types/database.types';
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmmnmy.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// Conditional skip: Only run integration tests when Supabase environment is configured
+const hasSupabaseEnv = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+const describeIfEnv = hasSupabaseEnv ? describe : describe.skip;
+
 // Test user credentials (following established pattern)
 const ADMIN_EMAIL = 'test-admin@elevana.com';
 const ADMIN_PASSWORD = 'test-admin-password-123';
@@ -129,7 +133,10 @@ async function ensureTestScriptExists(client: SupabaseClient<Database>) {
   }
 }
 
-describe.skip('Governed Hard-Delete Pathway (Option C Architecture)', () => {
+// INTEGRATION TEST - Requires Supabase (local or remote) with migrations + test users
+// Function `hard_delete_comment_tree` must exist (verify: SELECT * FROM pg_proc WHERE proname = 'hard_delete_comment_tree')
+// To run: Ensure local Supabase is running (`npx supabase start`) OR set remote credentials
+describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
   let client: SupabaseClient<Database>;
   let adminUserId: string;
   let testCommentIds: string[] = [];
