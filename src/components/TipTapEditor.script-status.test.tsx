@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TipTapEditor } from './TipTapEditor';
 import * as scriptService from '../services/scriptService';
 import { ScriptStatusProvider } from '../contexts/ScriptStatusContext';
@@ -153,7 +154,6 @@ describe.skip('TipTapEditor - Script Status Selector (TDD REFACTOR Phase)', () =
   // Helper function to render with all required providers
   // Note: NavigationContext is mocked at module level with useNavigation hook
   const renderWithProviders = (ui: React.ReactElement) => {
-    const { QueryClient, QueryClientProvider } = require('@tanstack/react-query');
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },

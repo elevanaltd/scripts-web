@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TipTapEditor } from './TipTapEditor';
 import { Editor } from '@tiptap/react';
@@ -341,7 +341,7 @@ describe('TipTapEditor - Component Extraction', () => {
       const initialCallCount = mockExtractComponents.mock.calls.length;
 
       // Simulate editor update
-      const onUpdateCallback = (mockEditorInstance as { onUpdateCallback?: Function }).onUpdateCallback;
+      const onUpdateCallback = (mockEditorInstance as { onUpdateCallback?: (params: { editor: Editor }) => void }).onUpdateCallback;
       if (onUpdateCallback) {
         onUpdateCallback({ editor: mockEditorInstance as Editor });
       }
@@ -378,7 +378,7 @@ describe('TipTapEditor - Component Extraction', () => {
       });
 
       // Simulate content update
-      const onUpdateCallback = (mockEditorInstance as { onUpdateCallback?: Function }).onUpdateCallback;
+      const onUpdateCallback = (mockEditorInstance as { onUpdateCallback?: (params: { editor: Editor }) => void }).onUpdateCallback;
       if (onUpdateCallback) {
         onUpdateCallback({ editor: mockEditorInstance as Editor });
       }
@@ -422,7 +422,7 @@ describe('TipTapEditor - Component Extraction', () => {
       });
 
       // Simulate content update attempt (should be blocked by editable: false)
-      const onUpdateCallback = (mockEditorInstance as { onUpdateCallback?: Function }).onUpdateCallback;
+      const onUpdateCallback = (mockEditorInstance as { onUpdateCallback?: (params: { editor: Editor }) => void }).onUpdateCallback;
       if (onUpdateCallback) {
         onUpdateCallback({ editor: mockEditorInstance as Editor });
       }
