@@ -29,8 +29,6 @@ import {
   clearSessionCache,
   TEST_USERS,
   SUPABASE_CONFIG,
-  mintJwt,
-  makeRlsClient,
 } from '../test/auth-helpers';
 
 // Test configuration - using shared constants from auth-helpers
@@ -41,21 +39,10 @@ const SUPABASE_ANON_KEY = SUPABASE_CONFIG.anonKey;
 let TEST_SCRIPT_ID: string;
 let TEST_VIDEO_ID: string;
 
-// Auth modes
-const MINTED_MODE = Boolean(SUPABASE_CONFIG.jwtSecret);
-
-// Session cache for reuse across tests (legacy) and minted mode context
+// Session cache for reuse across tests (ARCHITECTURAL FIX - eliminates rate limiting)
 let adminSession: Session;
 let clientSession: Session;
 let unauthorizedSession: Session;
-let adminUserId: string;
-let clientUserId: string;
-let unauthorizedUserId: string;
-
-// Clients per role when using minted JWTs
-let supabaseAdmin!: SupabaseClient<Database>;
-let supabaseClientUser!: SupabaseClient<Database>;
-let supabaseUnauthorized!: SupabaseClient<Database>;
 
 // Import the functions we need to test (will fail until implemented)
 import * as commentsLib from './comments';
@@ -135,78 +122,43 @@ describe('Comments Infrastructure - Integration Tests', () => {
     // Create single client
     supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    if (MINTED_MODE && SUPABASE_CONFIG.jwtSecret) {
-      // One-time lightweight sign-ins to resolve user IDs
-      const tmp = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-      const adminResp = await tmp.auth.signInWithPassword({ email: TEST_USERS.ADMIN.email, password: TEST_USERS.ADMIN.password });
-      if (adminResp.error || !adminResp.data.user) throw new Error(`Failed to resolve admin ID: ${adminResp.error?.message}`);
-      adminUserId = adminResp.data.user.id;
-      await tmp.auth.signOut();
-      const clientResp = await tmp.auth.signInWithPassword({ email: TEST_USERS.CLIENT.email, password: TEST_USERS.CLIENT.password });
-      if (clientResp.error || !clientResp.data.user) throw new Error(`Failed to resolve client ID: ${clientResp.error?.message}`);
-      clientUserId = clientResp.data.user.id;
-      await tmp.auth.signOut();
-      const unauthResp = await tmp.auth.signInWithPassword({ email: TEST_USERS.UNAUTHORIZED.email, password: TEST_USERS.UNAUTHORIZED.password });
-      if (unauthResp.error || !unauthResp.data.user) throw new Error(`Failed to resolve unauthorized ID: ${unauthResp.error?.message}`);
-      unauthorizedUserId = unauthResp.data.user.id;
-      await tmp.auth.signOut();
+    // ARCHITECTURAL FIX: Authenticate ONCE per suite (not per test)
+    // This eliminates 90%+ of auth API calls, preventing rate limiting
+    adminSession = await authenticateAndCache(supabaseClient, TEST_USERS.ADMIN.email, TEST_USERS.ADMIN.password);
+    clientSession = await authenticateAndCache(supabaseClient, TEST_USERS.CLIENT.email, TEST_USERS.CLIENT.password);
+    unauthorizedSession = await authenticateAndCache(supabaseClient, TEST_USERS.UNAUTHORIZED.email, TEST_USERS.UNAUTHORIZED.password);
 
-      // Mint JWTs and create per-role clients
-      const adminJwt = await mintJwt({ sub: adminUserId, email: TEST_USERS.ADMIN.email, jwtSecret: SUPABASE_CONFIG.jwtSecret });
-      const clientJwt = await mintJwt({ sub: clientUserId, email: TEST_USERS.CLIENT.email, jwtSecret: SUPABASE_CONFIG.jwtSecret });
-      const unauthorizedJwt = await mintJwt({ sub: unauthorizedUserId, email: TEST_USERS.UNAUTHORIZED.email, jwtSecret: SUPABASE_CONFIG.jwtSecret });
+    // After authentication, client is left in last authenticated user's session (unauthorized)
+    // Explicitly switch to admin session for test data setup
+    await switchToSession(supabaseClient, adminSession);
 
-      supabaseAdmin = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, adminJwt);
-      supabaseClientUser = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientJwt);
-      supabaseUnauthorized = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, unauthorizedJwt);
-
-      // Default to unauthorized; tests will assign as needed
-      supabaseClient = supabaseUnauthorized;
-
-      // Ensure test data exists (admin client)
-      await ensureTestDataExists(supabaseAdmin);
-    } else {
-      // Legacy session reuse fallback
-      adminSession = await authenticateAndCache(supabaseClient, TEST_USERS.ADMIN.email, TEST_USERS.ADMIN.password);
-      clientSession = await authenticateAndCache(supabaseClient, TEST_USERS.CLIENT.email, TEST_USERS.CLIENT.password);
-      unauthorizedSession = await authenticateAndCache(supabaseClient, TEST_USERS.UNAUTHORIZED.email, TEST_USERS.UNAUTHORIZED.password);
-
-      await switchToSession(supabaseClient, adminSession);
-      await ensureTestDataExists(supabaseClient);
-
-      // capture IDs for convenience
-      adminUserId = getUserId(adminSession);
-      clientUserId = getUserId(clientSession);
-      unauthorizedUserId = getUserId(unauthorizedSession);
-    }
+    // Ensure test data exists (admin session now active)
+    await ensureTestDataExists(supabaseClient);
   });
 
   beforeEach(async () => {
     // Clean up any existing test comments before each test
+    // Use session reuse instead of re-authenticating
     try {
-      supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      if (!MINTED_MODE) {
-        await switchToSession(supabaseClient, adminSession);
-      }
+      await switchToSession(supabaseClient, adminSession);
       if (TEST_SCRIPT_ID) {
         await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
       }
     } catch {
-      // ignore
+      // Cleanup might fail if no admin access, but that's OK
     }
   });
 
   afterEach(async () => {
+    // Cleanup test comments only (leave test data intact for reuse)
+    // Use session reuse instead of re-authenticating
     try {
-      supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      if (!MINTED_MODE) {
-        await switchToSession(supabaseClient, adminSession);
-      }
+      await switchToSession(supabaseClient, adminSession);
       if (TEST_SCRIPT_ID) {
         await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
       }
     } catch {
-      // ignore
+      // Cleanup might fail if no admin access, but that's OK
     }
   });
 
@@ -218,14 +170,14 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
   describe('Comments Table Schema', () => {
     test('admin should create comment with required fields', async () => {
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      const uid = MINTED_MODE ? adminUserId : getUserId(adminSession);
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       const { data, error } = await supabaseClient
         .from('comments')
         .insert({
           script_id: TEST_SCRIPT_ID,
-user_id: uid,
+          user_id: adminUserId,
           content: 'This is a test comment from admin',
           start_position: 10,
           end_position: 20
@@ -237,7 +189,7 @@ user_id: uid,
       expect(data).toBeDefined();
       expect(data?.id).toBeDefined();
       expect(data?.script_id).toBe(TEST_SCRIPT_ID);
-expect(data?.user_id).toBe(uid);
+      expect(data?.user_id).toBe(adminUserId);
       expect(data?.content).toBe('This is a test comment from admin');
       expect(data?.start_position).toBe(10);
       expect(data?.end_position).toBe(20);
@@ -246,15 +198,15 @@ expect(data?.user_id).toBe(uid);
     });
 
     test('admin should create threaded comment reply', async () => {
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      const uid = MINTED_MODE ? adminUserId : getUserId(adminSession);
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       // Create parent comment first
       const { data: parentComment, error: parentError } = await supabaseClient
         .from('comments')
         .insert({
           script_id: TEST_SCRIPT_ID,
-user_id: uid,
+          user_id: adminUserId,
           content: 'Parent comment from admin',
           start_position: 5,
           end_position: 15
@@ -283,8 +235,8 @@ user_id: uid,
     });
 
     test('admin should resolve comment with resolved_at and resolved_by', async () => {
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      const uid = MINTED_MODE ? adminUserId : getUserId(adminSession);
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       // Create comment
       const { data: comment, error: createError } = await supabaseClient
@@ -306,7 +258,7 @@ supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
         .from('comments')
         .update({
           resolved_at: new Date().toISOString(),
-resolved_by: uid
+          resolved_by: adminUserId
         })
         .eq('id', comment ? comment.id : '')
         .select()
@@ -314,7 +266,7 @@ resolved_by: uid
 
       expect(resolveError).toBeNull();
       expect(resolvedComment?.resolved_at).toBeDefined();
-expect(resolvedComment?.resolved_by).toBe(uid);
+      expect(resolvedComment?.resolved_by).toBe(adminUserId);
     });
   });
 
@@ -362,7 +314,7 @@ expect(resolvedComment?.resolved_by).toBe(uid);
       });
 
       // Test: Client should see comment from their assigned project
-      supabaseClient = MINTED_MODE ? supabaseClientUser : supabaseClient;
+      await switchToSession(supabaseClient, clientSession);
       const { data, error } = await supabaseClient
         .from('comments')
         .select('*')
@@ -413,7 +365,7 @@ expect(resolvedComment?.resolved_by).toBe(uid);
       });
 
       // Test: Unauthorized user tries to read
-      supabaseClient = MINTED_MODE ? supabaseUnauthorized : supabaseClient;
+      await switchToSession(supabaseClient, unauthorizedSession);
       const { data, error } = await supabaseClient
         .from('comments')
         .select('*')
@@ -447,14 +399,14 @@ expect(resolvedComment?.resolved_by).toBe(uid);
 
   describe('Comments Position Validation', () => {
     test('should validate position bounds (negative positions)', async () => {
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      const uid = MINTED_MODE ? adminUserId : getUserId(adminSession);
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       const { error } = await supabaseClient
         .from('comments')
         .insert({
           script_id: TEST_SCRIPT_ID,
-user_id: uid,
+          user_id: adminUserId,
           content: 'Invalid position comment',
           start_position: -1, // Invalid negative position
           end_position: 100
@@ -509,8 +461,8 @@ user_id: uid,
 
   describe('Comments Threading Behavior', () => {
     test('admin should cascade delete child comments when parent deleted', async () => {
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      const uid = MINTED_MODE ? adminUserId : getUserId(adminSession);
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       // Create parent comment
       const { data: parentComment, error: parentError } = await supabaseClient
@@ -532,7 +484,7 @@ supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
         .from('comments')
         .insert({
           script_id: TEST_SCRIPT_ID,
-user_id: uid,
+          user_id: adminUserId,
           content: 'Reply that will be cascade deleted',
           start_position: 0,
           end_position: 10,
@@ -567,7 +519,8 @@ user_id: uid,
 
   describe('Comments Performance Indexes', () => {
     test('admin should efficiently query comments by script_id', async () => {
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       // Create multiple comments
       const comments = [];
@@ -642,14 +595,14 @@ supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
 
   describe('getComments Performance - N+1 Query Fix', () => {
     test('should fetch all user profiles in single query, not N+1 queries', async () => {
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-      const uid = MINTED_MODE ? adminUserId : getUserId(adminSession);
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       // Create 5 comments from the same user (to test deduplication)
       for (let i = 0; i < 5; i++) {
         await supabaseClient.from('comments').insert({
           script_id: TEST_SCRIPT_ID,
-user_id: uid,
+          user_id: adminUserId,
           content: `Performance test comment ${i}`,
           start_position: i * 10,
           end_position: (i * 10) + 5
@@ -690,8 +643,8 @@ user_id: uid,
     });
 
     test('should complete getComments for 50 comments in <200ms', async () => {
-      supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-/* no-op: legacy path uses getUserId directly */
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       // Create 50 test comments to stress test performance
       const insertPromises = [];
@@ -801,42 +754,19 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     // Create single client for this suite
     supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    if (MINTED_MODE && SUPABASE_CONFIG.jwtSecret) {
-      const tmp = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-      const adminResp = await tmp.auth.signInWithPassword({ email: TEST_USERS.ADMIN.email, password: TEST_USERS.ADMIN.password });
-      if (adminResp.error || !adminResp.data.user) throw new Error(`Failed to resolve admin ID: ${adminResp.error?.message}`);
-      adminUserId = adminResp.data.user.id;
-      await tmp.auth.signOut();
-      const clientResp = await tmp.auth.signInWithPassword({ email: TEST_USERS.CLIENT.email, password: TEST_USERS.CLIENT.password });
-      if (clientResp.error || !clientResp.data.user) throw new Error(`Failed to resolve client ID: ${clientResp.error?.message}`);
-      clientUserId = clientResp.data.user.id;
-      await tmp.auth.signOut();
-      const unauthResp = await tmp.auth.signInWithPassword({ email: TEST_USERS.UNAUTHORIZED.email, password: TEST_USERS.UNAUTHORIZED.password });
-      if (unauthResp.error || !unauthResp.data.user) throw new Error(`Failed to resolve unauthorized ID: ${unauthResp.error?.message}`);
-      unauthorizedUserId = unauthResp.data.user.id;
-      await tmp.auth.signOut();
+    // ARCHITECTURAL FIX: Authenticate ONCE per suite with THIS client
+    // NOTE: Each Supabase client instance has independent auth state
+    // We cannot reuse sessions from a different client instance
+    adminSession = await authenticateAndCache(supabaseClient, TEST_USERS.ADMIN.email, TEST_USERS.ADMIN.password);
+    clientSession = await authenticateAndCache(supabaseClient, TEST_USERS.CLIENT.email, TEST_USERS.CLIENT.password);
+    unauthorizedSession = await authenticateAndCache(supabaseClient, TEST_USERS.UNAUTHORIZED.email, TEST_USERS.UNAUTHORIZED.password);
 
-      const adminJwt = await mintJwt({ sub: adminUserId, email: TEST_USERS.ADMIN.email, jwtSecret: SUPABASE_CONFIG.jwtSecret });
-      const clientJwt = await mintJwt({ sub: clientUserId, email: TEST_USERS.CLIENT.email, jwtSecret: SUPABASE_CONFIG.jwtSecret });
-      const unauthorizedJwt = await mintJwt({ sub: unauthorizedUserId, email: TEST_USERS.UNAUTHORIZED.email, jwtSecret: SUPABASE_CONFIG.jwtSecret });
+    // After authentication, client is in last authenticated session (unauthorized)
+    // Explicitly switch to admin for test data setup
+    await switchToSession(supabaseClient, adminSession);
 
-      supabaseAdmin = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, adminJwt);
-      supabaseClientUser = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientJwt);
-      supabaseUnauthorized = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, unauthorizedJwt);
-
-      supabaseClient = supabaseUnauthorized;
-      await ensureTestDataExists(supabaseAdmin);
-    } else {
-      // Legacy session reuse
-      adminSession = await authenticateAndCache(supabaseClient, TEST_USERS.ADMIN.email, TEST_USERS.ADMIN.password);
-      clientSession = await authenticateAndCache(supabaseClient, TEST_USERS.CLIENT.email, TEST_USERS.CLIENT.password);
-      unauthorizedSession = await authenticateAndCache(supabaseClient, TEST_USERS.UNAUTHORIZED.email, TEST_USERS.UNAUTHORIZED.password);
-      await switchToSession(supabaseClient, adminSession);
-      await ensureTestDataExists(supabaseClient);
-      adminUserId = getUserId(adminSession);
-      clientUserId = getUserId(clientSession);
-      unauthorizedUserId = getUserId(unauthorizedSession);
-    }
+    // Ensure test data exists for CRUD tests (admin session active)
+    await ensureTestDataExists(supabaseClient);
   });
 
   beforeEach(async () => {
@@ -872,8 +802,8 @@ describe('Comments CRUD Functions - TDD Phase', () => {
   describe('createComment Function - TDD (WILL FAIL)', () => {
     test('should create comment and return CommentWithUser type', async () => {
       // This test WILL FAIL - function doesn't exist yet
-      supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-/* no-op */
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       const commentData = {
         scriptId: TEST_SCRIPT_ID,
@@ -893,8 +823,8 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should validate required fields and return error', async () => {
-      supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-/* no-op */
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
 
       const invalidData = {
         scriptId: '',
@@ -936,7 +866,8 @@ describe('Comments CRUD Functions - TDD Phase', () => {
 
     test('should filter comments by resolved status', async () => {
       // Setup: Create resolved and unresolved comments
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
       await supabaseClient.from('comments').insert([
         {
           script_id: TEST_SCRIPT_ID,
@@ -969,7 +900,8 @@ supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
   describe('updateComment Function', () => {
     test('should update comment content and return updated comment', async () => {
       // Setup: Create comment first
-supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
       const { data: comment } = await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -991,8 +923,8 @@ supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
     });
 
     test('should resolve comment with timestamp and user', async () => {
-      supabaseClient = MINTED_MODE ? supabaseAdmin : supabaseClient;
-/* no-op */
+      await switchToSession(supabaseClient, adminSession);
+      const adminUserId = getUserId(adminSession);
       const { data: comment } = await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,

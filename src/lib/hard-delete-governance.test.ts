@@ -41,81 +41,65 @@
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../types/database.types';
-import { SUPABASE_CONFIG, TEST_USERS, mintJwt, makeRlsClient } from '../test/auth-helpers';
 
 // Test configuration - following established RLS testing pattern
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmmnmy.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
-const MINTED_MODE = Boolean(SUPABASE_CONFIG.jwtSecret);
 
 // Conditional skip: Only run integration tests when Supabase environment is configured
 const hasSupabaseEnv = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 const describeIfEnv = hasSupabaseEnv ? describe : describe.skip;
 
 // Test user credentials (following established pattern)
-const ADMIN_EMAIL = TEST_USERS.ADMIN.email;
-const ADMIN_PASSWORD = TEST_USERS.ADMIN.password;
-const CLIENT_EMAIL = TEST_USERS.CLIENT.email;
-const CLIENT_PASSWORD = TEST_USERS.CLIENT.password;
+const ADMIN_EMAIL = 'test-admin@elevana.com';
+const ADMIN_PASSWORD = 'test-admin-password-123';
+const CLIENT_EMAIL = 'test-client@external.com';
+const CLIENT_PASSWORD = 'test-client-password-123';
 
 // Test data - dynamically created in CI environment
 let TEST_SCRIPT_ID: string;
 
-// Minted-JWT clients (used when VITE_SUPABASE_JWT_SECRET is provided)
-let supabaseAdmin!: SupabaseClient<Database>;
-let supabaseClientUser!: SupabaseClient<Database>;
-let adminUserIdResolved = '';
-let clientUserIdResolved = '';
+// Session cache to prevent Supabase auth rate limiting
+let lastAuthTime = 0;
+const MIN_AUTH_DELAY_MS = 750; // Rate limit protection
 
-async function initMintedClients() {
-  if (!MINTED_MODE || !SUPABASE_CONFIG.jwtSecret) return;
-  const tmp = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-  const adminResp = await tmp.auth.signInWithPassword({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
-  if (adminResp.error || !adminResp.data.user) throw new Error(`Failed to resolve admin ID: ${adminResp.error?.message}`);
-  adminUserIdResolved = adminResp.data.user.id;
-  await tmp.auth.signOut();
-  const clientResp = await tmp.auth.signInWithPassword({ email: CLIENT_EMAIL, password: CLIENT_PASSWORD });
-  if (clientResp.error || !clientResp.data.user) throw new Error(`Failed to resolve client ID: ${clientResp.error?.message}`);
-  clientUserIdResolved = clientResp.data.user.id;
-  await tmp.auth.signOut();
-
-  const adminJwt = await mintJwt({ sub: adminUserIdResolved, email: ADMIN_EMAIL, jwtSecret: SUPABASE_CONFIG.jwtSecret });
-  const clientJwt = await mintJwt({ sub: clientUserIdResolved, email: CLIENT_EMAIL, jwtSecret: SUPABASE_CONFIG.jwtSecret });
-
-  supabaseAdmin = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, adminJwt);
-  supabaseClientUser = makeRlsClient(SUPABASE_URL, SUPABASE_ANON_KEY, clientJwt);
+// Helper to add delay between auth operations
+async function authDelay() {
+  const now = Date.now();
+  const timeSinceLastAuth = now - lastAuthTime;
+  if (timeSinceLastAuth < MIN_AUTH_DELAY_MS) {
+    await new Promise(resolve => setTimeout(resolve, MIN_AUTH_DELAY_MS - timeSinceLastAuth));
+  }
+  lastAuthTime = Date.now();
 }
 
-async function assumeAdmin(client: SupabaseClient<Database>): Promise<string> {
-  if (MINTED_MODE) { return adminUserIdResolved; }
-  // Legacy fallback
-  await client.auth.signOut();
-  const { data, error } = await client.auth.signInWithPassword({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
-  if (error || !data.user) throw error || new Error('No user');
-  return data.user.id;
-}
+// Helper function with rate limit prevention
+async function signInAsUser(client: SupabaseClient, email: string, password: string) {
+  await authDelay(); // Rate limit prevention
 
-async function assumeClient(client: SupabaseClient<Database>): Promise<string> {
-  if (MINTED_MODE) { return clientUserIdResolved; }
   await client.auth.signOut();
-  const { data, error } = await client.auth.signInWithPassword({ email: CLIENT_EMAIL, password: CLIENT_PASSWORD });
-  if (error || !data.user) throw error || new Error('No user');
+  await authDelay(); // Rate limit prevention
+
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+
   return data.user.id;
 }
 
 // Helper to ensure test script exists
 async function ensureTestScriptExists(client: SupabaseClient<Database>) {
-  // Ensure admin context (minted mode uses admin client; legacy signs in)
-  if (!MINTED_MODE) {
-    const { error: authError } = await client.auth.signInWithPassword({
-      email: ADMIN_EMAIL,
-      password: ADMIN_PASSWORD
-    });
-    if (authError) {
-      console.warn('Warning: Could not authenticate as admin for test data setup');
-      TEST_SCRIPT_ID = '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680';
-      return;
-    }
+  await authDelay();
+
+  // Sign in as admin to create test data
+  const { data: authData, error: authError } = await client.auth.signInWithPassword({
+    email: ADMIN_EMAIL,
+    password: ADMIN_PASSWORD
+  });
+
+  if (authError || !authData.user) {
+    console.warn('Warning: Could not authenticate as admin for test data setup');
+    TEST_SCRIPT_ID = '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680'; // Fallback ID
+    return;
   }
 
   // Check if test script already exists
@@ -161,18 +145,14 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
     // Create client (single client pattern to avoid GoTrueClient conflicts)
     client = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    if (MINTED_MODE && SUPABASE_CONFIG.jwtSecret) {
-      await initMintedClients();
-    }
+    // Ensure test script exists
+    await ensureTestScriptExists(client);
 
-    // Ensure test script exists (use admin client when minted mode)
-    await ensureTestScriptExists(MINTED_MODE ? supabaseAdmin : client);
-
-    // Use admin context to create test data
-    adminUserId = await assumeAdmin(MINTED_MODE ? supabaseAdmin : client);
+    // Sign in as admin to create test data
+    adminUserId = await signInAsUser(client, ADMIN_EMAIL, ADMIN_PASSWORD);
 
     // Create test comment tree (parent + 2 children)
-    const { data: parentComment, error: parentError } = await (MINTED_MODE ? supabaseAdmin : client)
+    const { data: parentComment, error: parentError } = await client
       .from('comments')
       .insert({
         script_id: TEST_SCRIPT_ID,
@@ -192,7 +172,7 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
     testCommentIds = [parentComment.id];
 
     // Create child comments
-    const { data: childComments, error: childError } = await (MINTED_MODE ? supabaseAdmin : client)
+    const { data: childComments, error: childError } = await client
       .from('comments')
       .insert([
         {
@@ -226,16 +206,16 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
   afterEach(async () => {
     // Cleanup: Hard-delete test comments (if function exists and auth succeeds)
     try {
-      await assumeAdmin(MINTED_MODE ? supabaseAdmin : client);
+      await signInAsUser(client, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Attempt soft-delete first
-      await (MINTED_MODE ? supabaseAdmin : client).rpc('cascade_soft_delete_comments', {
+      await client.rpc('cascade_soft_delete_comments', {
         comment_ids: testCommentIds
       });
 
       // Attempt hard-delete (will fail gracefully if function doesn't exist yet - RED phase)
       for (const commentId of testCommentIds) {
-        await (MINTED_MODE ? supabaseAdmin : client).rpc('hard_delete_comment_tree', {
+        await client.rpc('hard_delete_comment_tree', {
           p_comment_id: commentId,
           p_reason: 'Test cleanup'
         });
@@ -251,12 +231,12 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
   describe('FK RESTRICT Constraint (Migration 1)', () => {
     test('should prevent raw DELETE of parent comment when children exist', async () => {
       // RED: This test expects FK RESTRICT constraint to block direct DELETE
-      await assumeAdmin(MINTED_MODE ? supabaseAdmin : client);
+      await signInAsUser(client, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const parentId = testCommentIds[0];
 
       // Attempt raw DELETE (should fail due to FK RESTRICT)
-      const { error } = await (MINTED_MODE ? supabaseAdmin : client)
+      const { error } = await client
         .from('comments')
         .delete()
         .eq('id', parentId);
@@ -270,20 +250,20 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
   describe('Admin Role Enforcement', () => {
     test('should require admin role for hard delete', async () => {
       // RED: Expect failure when client attempts hard delete
-      await assumeClient(MINTED_MODE ? supabaseClientUser : client);
+      await signInAsUser(client, CLIENT_EMAIL, CLIENT_PASSWORD);
 
       const parentId = testCommentIds[0];
 
       // Soft-delete first (client can soft-delete their own comments)
-      await assumeAdmin(MINTED_MODE ? supabaseAdmin : client);
-      await (MINTED_MODE ? supabaseAdmin : client).rpc('cascade_soft_delete_comments', {
+      await signInAsUser(client, ADMIN_EMAIL, ADMIN_PASSWORD);
+      await client.rpc('cascade_soft_delete_comments', {
         comment_ids: [parentId]
       });
 
       // Now attempt hard-delete as client
-      await assumeClient(MINTED_MODE ? supabaseClientUser : client);
+      await signInAsUser(client, CLIENT_EMAIL, CLIENT_PASSWORD);
 
-      const { error } = await (MINTED_MODE ? supabaseClientUser : client).rpc('hard_delete_comment_tree', {
+      const { error } = await client.rpc('hard_delete_comment_tree', {
         p_comment_id: parentId,
         p_reason: 'GDPR request'
       });
@@ -297,12 +277,12 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
   describe('Soft-Delete Precondition', () => {
     test('should require soft-delete precondition before hard delete', async () => {
       // RED: Expect failure when comment not soft-deleted
-      await assumeAdmin(MINTED_MODE ? supabaseAdmin : client);
+      await signInAsUser(client, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const parentId = testCommentIds[0];
 
       // Attempt hard-delete WITHOUT soft-delete first
-      const { error } = await (MINTED_MODE ? supabaseAdmin : client).rpc('hard_delete_comment_tree', {
+      const { error } = await client.rpc('hard_delete_comment_tree', {
         p_comment_id: parentId,
         p_reason: 'Test precondition enforcement'
       });
@@ -316,18 +296,18 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
   describe('Hard-Delete Execution', () => {
     test('should hard-delete tree and log operation when all conditions met', async () => {
       // GREEN: Valid hard delete by admin on soft-deleted tree
-      await assumeAdmin(MINTED_MODE ? supabaseAdmin : client);
+      await signInAsUser(client, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const parentId = testCommentIds[0];
 
       // Step 1: Soft-delete tree
-      const { error: softDeleteError } = await (MINTED_MODE ? supabaseAdmin : client).rpc('cascade_soft_delete_comments', {
+      const { error: softDeleteError } = await client.rpc('cascade_soft_delete_comments', {
         comment_ids: [parentId]
       });
       expect(softDeleteError).toBeNull();
 
       // Step 2: Hard-delete tree
-      const { data, error } = await (MINTED_MODE ? supabaseAdmin : client).rpc('hard_delete_comment_tree', {
+      const { data, error } = await client.rpc('hard_delete_comment_tree', {
         p_comment_id: parentId,
         p_reason: 'GDPR data purge request #12345'
       }) as { data: { success: boolean; descendants_deleted: number } | null; error: unknown };
@@ -339,7 +319,7 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
       expect(data?.descendants_deleted).toBe(3); // Parent + 2 children
 
       // Verify physical deletion
-      const { data: deletedComments, count } = await (MINTED_MODE ? supabaseAdmin : client)
+      const { data: deletedComments, count } = await client
         .from('comments')
         .select('*', { count: 'exact' })
         .in('id', testCommentIds);
@@ -348,7 +328,7 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
       expect(deletedComments).toHaveLength(0);
 
       // Verify audit log entry
-      const { data: auditLog } = await (MINTED_MODE ? supabaseAdmin : client)
+      const { data: auditLog } = await client
         .from('hard_delete_audit_log')
         .select('*')
         .eq('root_comment_id', parentId)
@@ -364,18 +344,18 @@ describeIfEnv('Governed Hard-Delete Pathway (Option C Architecture)', () => {
   describe('Audit Trail Logging', () => {
     test('should log failed hard-delete attempts', async () => {
       // GREEN: Verify audit trail includes failures
-      await assumeAdmin(MINTED_MODE ? supabaseAdmin : client);
+      await signInAsUser(client, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const parentId = testCommentIds[0];
 
       // Attempt hard-delete WITHOUT soft-delete (will fail)
-      await (MINTED_MODE ? supabaseAdmin : client).rpc('hard_delete_comment_tree', {
+      await client.rpc('hard_delete_comment_tree', {
         p_comment_id: parentId,
         p_reason: 'Test failure logging'
       });
 
       // Check audit log for failed attempt
-      const { data: auditLog } = await (MINTED_MODE ? supabaseAdmin : client)
+      const { data: auditLog } = await client
         .from('hard_delete_audit_log')
         .select('*')
         .eq('root_comment_id', parentId)
