@@ -154,6 +154,18 @@ export function useCommentSidebar({
           table: 'comments',
         },
         async (payload: RealtimePostgresChangesPayload) => {
+          // Ignore hard DELETE events - application uses soft deletes (UPDATE with deleted: true)
+          // Hard DELETEs only occur in test scenarios or manual database operations
+          // Soft delete UPDATE events are validated normally below
+          if (payload.eventType === 'DELETE') {
+            Logger.info('Ignoring hard DELETE event (application uses soft deletes)', {
+              table: payload.table,
+              commentId: payload.old?.id,
+              timestamp: new Date().toISOString()
+            });
+            return;
+          }
+
           // TD-005 SECURITY FIX: Verify-then-cache pattern
           // Validate payload BEFORE any processing (defense-in-depth)
           if (!validateRealtimePayload(payload, {
