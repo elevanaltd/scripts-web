@@ -112,7 +112,7 @@ vi.mock('@tiptap/react', async () => {
             childCount: 3
           }
         }
-      } as Partial<Editor>;
+      } as unknown as Partial<Editor>;
 
       // Simulate onCreate callback (component extraction on mount)
       if (onCreate) {

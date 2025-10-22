@@ -590,7 +590,7 @@ describe('CommentSidebar', () => {
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         },
-        error: null,
+        error: undefined,
       });
 
       renderWithProviders(<CommentSidebar scriptId="script-1" />);
