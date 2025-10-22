@@ -9,7 +9,9 @@
  * Critical-Engineer: consulted for Security vulnerability assessment
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase as defaultClient } from '../lib/supabase';
+import { SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '@elevanaltd/shared-lib/types';
 import {
   validateVideoId,
   validateScriptId,
@@ -54,14 +56,18 @@ export interface ScriptServiceErrorInterface {
  * Creates a new script if one doesn't exist
  * Loads components from the normalized script_components table
  */
-export async function loadScriptForVideo(videoId: string, userRole?: string | null): Promise<Script> {
+export async function loadScriptForVideo(
+  videoId: string,
+  userRole?: string | null,
+  client: SupabaseClient<Database> = defaultClient
+): Promise<Script> {
   try {
     // SECURITY: Validate input before database operation
     const validatedVideoId = validateVideoId(videoId);
 
     // First, try to find existing script
     // Using maybeSingle() to avoid 406 error when no rows exist
-    const { data: existingScript, error: fetchError } = await supabase
+    const { data: existingScript, error: fetchError } = await client
       .from('scripts')
       .select('*')
       .eq('video_id', validatedVideoId)
@@ -74,7 +80,7 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
 
     // If script exists, load its components and return complete object
     if (existingScript) {
-      const { data: components, error: componentsError } = await supabase
+      const { data: components, error: componentsError } = await client
         .from('script_components')
         .select('*')
         .eq('script_id', existingScript.id)
@@ -130,7 +136,7 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
     // When ignoreDuplicates:true and duplicate exists, UPSERT returns 0 rows by design.
     // Chaining .select() on 0 rows causes PostgREST 406 error: "JSON object requested, 0 rows returned"
     // Solution: UPSERT without .select(), then always SELECT after (works whether created or existed)
-    const { error: upsertError } = await supabase
+    const { error: upsertError } = await client
       .from('scripts')
       .upsert(newScript, { onConflict: 'video_id', ignoreDuplicates: true });
 
@@ -140,7 +146,7 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
 
     // Always SELECT after UPSERT (works whether script was just created or already existed)
     // This eliminates conditional logic and 406 errors from .select() on ignored duplicates
-    const { data: script, error: fetchAfterUpsertError } = await supabase
+    const { data: script, error: fetchAfterUpsertError } = await client
       .from('scripts')
       .select('*')
       .eq('video_id', validatedVideoId)
@@ -155,7 +161,7 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
     }
 
     // Load components for complete script object
-    const { data: components, error: componentsError } = await supabase
+    const { data: components, error: componentsError } = await client
       .from('script_components')
       .select('*')
       .eq('script_id', script.id)
@@ -193,11 +199,13 @@ export async function loadScriptForVideo(videoId: string, userRole?: string | nu
  *
  * @param scriptId - UUID of script to update
  * @param updates - Partial script updates (only changed fields)
+ * @param client - Supabase client instance (defaults to singleton)
  * @returns Complete updated script with components
  */
 export async function saveScript(
   scriptId: string,
-  updates: Partial<Omit<Script, 'id' | 'video_id' | 'created_at' | 'updated_at' | 'components'>>
+  updates: Partial<Omit<Script, 'id' | 'video_id' | 'created_at' | 'updated_at' | 'components'>>,
+  client: SupabaseClient<Database> = defaultClient
 ): Promise<Script> {
   try {
     // SECURITY: Validate script ID before database operation
@@ -229,7 +237,7 @@ export async function saveScript(
 
     // PATCH pattern: Only update provided fields
     // Database trigger will handle updated_at timestamp
-    const { data: updatedScript, error: scriptError } = await supabase
+    const { data: updatedScript, error: scriptError } = await client
       .from('scripts')
       .update(validatedUpdates)
       .eq('id', validatedScriptId)
@@ -241,7 +249,7 @@ export async function saveScript(
     }
 
     // Load components for complete script object
-    const { data: components, error: componentsError } = await supabase
+    const { data: components, error: componentsError } = await client
       .from('script_components')
       .select('*')
       .eq('script_id', validatedScriptId)
@@ -277,6 +285,7 @@ export async function saveScript(
  * @param yjsState - Y.js document state (Uint8Array | null)
  * @param plainText - Extracted plain text for search/display
  * @param components - Component array for atomic persistence
+ * @param client - Supabase client instance (defaults to singleton)
  * @returns Complete updated script with components
  * @throws ScriptServiceError if RPC fails (no silent fallback - fail-fast)
  */
@@ -284,7 +293,8 @@ export async function saveScriptWithComponents(
   scriptId: string,
   yjsState: Uint8Array | null,
   plainText: string,
-  components: ComponentData[]
+  components: ComponentData[],
+  client: SupabaseClient<Database> = defaultClient
 ): Promise<Script> {
   try {
     // SECURITY: Validate all inputs before database operation
@@ -293,7 +303,7 @@ export async function saveScriptWithComponents(
     const validatedComponents = validateComponentArray(components);
 
     // Call atomic RPC function for component persistence
-    const { data: rpcData, error: rpcError } = await supabase
+    const { data: rpcData, error: rpcError } = await client
       .rpc('save_script_with_components', {
         p_script_id: validatedScriptId,
         p_yjs_state: yjsState ? Buffer.from(yjsState).toString('base64') : '',
@@ -341,12 +351,15 @@ export async function saveScriptWithComponents(
 /**
  * Get script by ID with components (utility function)
  */
-export async function getScriptById(scriptId: string): Promise<Script> {
+export async function getScriptById(
+  scriptId: string,
+  client: SupabaseClient<Database> = defaultClient
+): Promise<Script> {
   try {
     // SECURITY: Validate input before database operation
     const validatedScriptId = validateScriptId(scriptId);
 
-    const { data: script, error } = await supabase
+    const { data: script, error } = await client
       .from('scripts')
       .select('*')
       .eq('id', validatedScriptId)
@@ -357,7 +370,7 @@ export async function getScriptById(scriptId: string): Promise<Script> {
     }
 
     // Load components for the script
-    const { data: components, error: componentsError } = await supabase
+    const { data: components, error: componentsError } = await client
       .from('script_components')
       .select('*')
       .eq('script_id', validatedScriptId)
@@ -410,7 +423,8 @@ export function generateContentHash(content: string): string {
  */
 export async function updateScriptStatus(
   scriptId: string,
-  status: ScriptWorkflowStatus
+  status: ScriptWorkflowStatus,
+  client: SupabaseClient<Database> = defaultClient
 ): Promise<Script> {
   try {
     // SECURITY: Validate inputs before database operation
@@ -424,7 +438,7 @@ export async function updateScriptStatus(
 
     // Call secure RPC function that updates ONLY status column
     // RPC provides column-level security that RLS policies cannot enforce
-    const { data: updatedScriptArray, error } = await supabase
+    const { data: updatedScriptArray, error } = await client
       .rpc('update_script_status', {
         p_script_id: validatedScriptId,
         p_new_status: status
@@ -449,7 +463,7 @@ export async function updateScriptStatus(
     }
 
     // Load components for complete script object
-    const { data: components, error: componentsError } = await supabase
+    const { data: components, error: componentsError } = await client
       .from('script_components')
       .select('*')
       .eq('script_id', validatedScriptId)

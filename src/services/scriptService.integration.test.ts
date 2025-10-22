@@ -48,6 +48,9 @@ let TEST_VIDEO_ID: string;
 let TEST_PROJECT_ID: string;
 let adminClient: SupabaseClient<Database>;
 
+// Unique test run identifier to avoid eav_code collisions
+const TEST_RUN_ID = `TEST_${Date.now()}`;
+
 // Rate limit protection
 let lastAuthTime = 0;
 const MIN_AUTH_DELAY_MS = 750;
@@ -90,21 +93,24 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
     return;
   }
 
-  // Create or get test project
+  // Create or get test project (unique per run to avoid eav_code collisions)
   const { data: existingProjects } = await client
     .from('projects')
-    .select('id')
-    .eq('name', 'Test Project - scriptService')
+    .select('id, eav_code')
+    .eq('eav_code', TEST_RUN_ID)
     .limit(1);
 
   if (existingProjects && existingProjects.length > 0) {
     TEST_PROJECT_ID = existingProjects[0].id;
   } else {
+    // Generate UUID for project ID (database requires client-generated IDs)
+    const projectId = crypto.randomUUID();
     const { data: newProject, error: projectError } = await client
       .from('projects')
       .insert({
-        name: 'Test Project - scriptService',
-        eav_code: 'SCRIPT_TEST',
+        id: projectId,
+        title: `Test Project - scriptService - ${TEST_RUN_ID}`,
+        eav_code: TEST_RUN_ID,
         client_filter: 'test_client'
       })
       .select('id')
@@ -118,22 +124,24 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
     }
   }
 
-  // Create or get test video
+  // Create or get test video (unique per run)
   const { data: existingVideos } = await client
     .from('videos')
     .select('id')
-    .eq('title', 'Test Video - scriptService')
+    .eq('eav_code', TEST_RUN_ID)
     .limit(1);
 
   if (existingVideos && existingVideos.length > 0) {
     TEST_VIDEO_ID = existingVideos[0].id;
   } else {
+    // Generate UUID for video ID (database requires client-generated IDs)
+    const videoId = crypto.randomUUID();
     const { data: newVideo, error: videoError } = await client
       .from('videos')
       .insert({
-        project_id: TEST_PROJECT_ID,
-        title: 'Test Video - scriptService',
-        eav_code: 'V001'
+        id: videoId,
+        title: `Test Video - scriptService - ${TEST_RUN_ID}`,
+        eav_code: TEST_RUN_ID  // Unique per run, references project by same eav_code
       })
       .select('id')
       .single();
@@ -191,7 +199,7 @@ describe('scriptService - Integration Tests', () => {
       expect(createdScript).toBeTruthy();
 
       // Load via service
-      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       expect(script).toBeDefined();
       expect(script.video_id).toBe(TEST_VIDEO_ID);
@@ -202,7 +210,7 @@ describe('scriptService - Integration Tests', () => {
     test('should create new script when none exists (admin)', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       expect(script).toBeDefined();
       expect(script.video_id).toBe(TEST_VIDEO_ID);
@@ -213,7 +221,7 @@ describe('scriptService - Integration Tests', () => {
 
     test('[RLS BLOCK] should return readonly placeholder for client user when no script exists', async () => {
       // Don't sign in - client users can't create scripts
-      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'client');
+      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'client', adminClient);
 
       expect(script).toBeDefined();
       expect(script.id).toContain('readonly');
@@ -227,9 +235,9 @@ describe('scriptService - Integration Tests', () => {
 
       // Simulate concurrent calls to loadScriptForVideo
       const promises = [
-        loadScriptForVideo(TEST_VIDEO_ID, 'admin'),
-        loadScriptForVideo(TEST_VIDEO_ID, 'admin'),
-        loadScriptForVideo(TEST_VIDEO_ID, 'admin')
+        loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient),
+        loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient),
+        loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient)
       ];
 
       const results = await Promise.all(promises);
@@ -285,7 +293,7 @@ describe('scriptService - Integration Tests', () => {
         ]);
 
       // Load via service
-      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       expect(script.components).toHaveLength(2);
       expect(script.components[0].number).toBe(1);
@@ -297,7 +305,7 @@ describe('scriptService - Integration Tests', () => {
     test('should throw error for invalid video ID', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      await expect(loadScriptForVideo('invalid-id', 'admin')).rejects.toThrow();
+      await expect(loadScriptForVideo('invalid-id', 'admin', adminClient)).rejects.toThrow();
     });
   });
 
@@ -306,13 +314,13 @@ describe('scriptService - Integration Tests', () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create script first
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       // Save with updates
       const updatedScript = await saveScript(initialScript.id, {
         plain_text: 'Updated content',
         component_count: 3
-      });
+      }, adminClient);
 
       expect(updatedScript.plain_text).toBe('Updated content');
       expect(updatedScript.component_count).toBe(3);
@@ -322,11 +330,11 @@ describe('scriptService - Integration Tests', () => {
     test('should save script with status update', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       const updatedScript = await saveScript(initialScript.id, {
         status: 'in_review'
-      });
+      }, adminClient);
 
       expect(updatedScript.status).toBe('in_review');
     });
@@ -334,24 +342,24 @@ describe('scriptService - Integration Tests', () => {
     test('[VALIDATION] should reject invalid status', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       await expect(
         saveScript(initialScript.id, {
           status: 'invalid_status' as ScriptWorkflowStatus
-        })
+        }, adminClient)
       ).rejects.toThrow('Invalid status');
     });
 
     test('should save Y.js state (binary data)', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
       const testYjsState = new Uint8Array([1, 2, 3, 4, 5]);
 
       const updatedScript = await saveScript(initialScript.id, {
         yjs_state: testYjsState
-      });
+      }, adminClient);
 
       expect(updatedScript.id).toBe(initialScript.id);
 
@@ -369,14 +377,14 @@ describe('scriptService - Integration Tests', () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       await expect(
-        saveScript('invalid-id', { plain_text: 'test' })
+        saveScript('invalid-id', { plain_text: 'test' }, adminClient)
       ).rejects.toThrow();
     });
 
     test('should load components after save', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       // Create a component manually
       await adminClient
@@ -392,7 +400,7 @@ describe('scriptService - Integration Tests', () => {
       // Save script (should reload components)
       const updatedScript = await saveScript(initialScript.id, {
         plain_text: 'Updated'
-      });
+      }, adminClient);
 
       expect(updatedScript.components).toHaveLength(1);
       expect(updatedScript.components[0].content).toBe('Test component');
@@ -403,7 +411,7 @@ describe('scriptService - Integration Tests', () => {
     test('[ATOMIC SAVE] should save script and components atomically', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       const components = [
         {
@@ -424,7 +432,8 @@ describe('scriptService - Integration Tests', () => {
         initialScript.id,
         null,
         'First component\nSecond component',
-        components
+        components,
+        adminClient
       );
 
       expect(updatedScript.plain_text).toBe('First component\nSecond component');
@@ -445,13 +454,14 @@ describe('scriptService - Integration Tests', () => {
     test('should handle empty components array', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       const updatedScript = await saveScriptWithComponents(
         initialScript.id,
         null,
         'Empty script',
-        []
+        [],
+        adminClient
       );
 
       expect(updatedScript.components).toHaveLength(0);
@@ -460,14 +470,15 @@ describe('scriptService - Integration Tests', () => {
     test('should update existing components (replace pattern)', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       // First save
       await saveScriptWithComponents(
         initialScript.id,
         null,
         'Original',
-        [{ number: 1, content: 'Original', wordCount: 1, hash: generateContentHash('Original') }]
+        [{ number: 1, content: 'Original', wordCount: 1, hash: generateContentHash('Original') }],
+        adminClient
       );
 
       // Update with new components
@@ -475,7 +486,8 @@ describe('scriptService - Integration Tests', () => {
         initialScript.id,
         null,
         'Updated',
-        [{ number: 1, content: 'Updated', wordCount: 1, hash: generateContentHash('Updated') }]
+        [{ number: 1, content: 'Updated', wordCount: 1, hash: generateContentHash('Updated') }],
+        adminClient
       );
 
       expect(updatedScript.components).toHaveLength(1);
@@ -493,14 +505,15 @@ describe('scriptService - Integration Tests', () => {
     test('should save Y.js state with components', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
       const testYjsState = new Uint8Array([10, 20, 30]);
 
       await saveScriptWithComponents(
         initialScript.id,
         testYjsState,
         'Test',
-        []
+        [],
+        adminClient
       );
 
       const { data: dbScript } = await adminClient
@@ -516,14 +529,14 @@ describe('scriptService - Integration Tests', () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       await expect(
-        saveScriptWithComponents('invalid-id', null, 'test', [])
+        saveScriptWithComponents('invalid-id', null, 'test', [], adminClient)
       ).rejects.toThrow();
     });
 
     test('[VALIDATION] should reject invalid component array', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       // Missing required fields
       await expect(
@@ -531,7 +544,8 @@ describe('scriptService - Integration Tests', () => {
           initialScript.id,
           null,
           'test',
-          [{ number: 1 } as any] // Invalid component
+          [{ number: 1 } as any], // Invalid component
+          adminClient
         )
       ).rejects.toThrow();
     });
@@ -541,9 +555,9 @@ describe('scriptService - Integration Tests', () => {
     test('should fetch script by ID (admin)', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
-      const fetchedScript = await getScriptById(createdScript.id);
+      const fetchedScript = await getScriptById(createdScript.id, adminClient);
 
       expect(fetchedScript.id).toBe(createdScript.id);
       expect(fetchedScript.video_id).toBe(TEST_VIDEO_ID);
@@ -552,16 +566,17 @@ describe('scriptService - Integration Tests', () => {
     test('should fetch script with components', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       await saveScriptWithComponents(
         createdScript.id,
         null,
         'Test',
-        [{ number: 1, content: 'Test', wordCount: 1, hash: generateContentHash('Test') }]
+        [{ number: 1, content: 'Test', wordCount: 1, hash: generateContentHash('Test') }],
+        adminClient
       );
 
-      const fetchedScript = await getScriptById(createdScript.id);
+      const fetchedScript = await getScriptById(createdScript.id, adminClient);
 
       expect(fetchedScript.components).toHaveLength(1);
       expect(fetchedScript.components[0].content).toBe('Test');
@@ -572,14 +587,14 @@ describe('scriptService - Integration Tests', () => {
 
       // Use SmartSuite ID format for non-existent script
       await expect(
-        getScriptById('000000000000000000000000')
+        getScriptById('000000000000000000000000', adminClient)
       ).rejects.toThrow();
     });
 
     test('should throw error for invalid script ID format', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      await expect(getScriptById('invalid-id')).rejects.toThrow();
+      await expect(getScriptById('invalid-id', adminClient)).rejects.toThrow();
     });
   });
 
@@ -587,9 +602,9 @@ describe('scriptService - Integration Tests', () => {
     test('should update script status via RPC (admin)', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
-      const updatedScript = await updateScriptStatus(createdScript.id, 'in_review');
+      const updatedScript = await updateScriptStatus(createdScript.id, 'in_review', adminClient);
 
       expect(updatedScript.status).toBe('in_review');
       expect(updatedScript.id).toBe(createdScript.id);
@@ -598,28 +613,28 @@ describe('scriptService - Integration Tests', () => {
     test('should update through multiple status transitions', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       // draft → in_review
-      let updated = await updateScriptStatus(createdScript.id, 'in_review');
+      let updated = await updateScriptStatus(createdScript.id, 'in_review', adminClient);
       expect(updated.status).toBe('in_review');
 
       // in_review → rework
-      updated = await updateScriptStatus(createdScript.id, 'rework');
+      updated = await updateScriptStatus(createdScript.id, 'rework', adminClient);
       expect(updated.status).toBe('rework');
 
       // rework → approved
-      updated = await updateScriptStatus(createdScript.id, 'approved');
+      updated = await updateScriptStatus(createdScript.id, 'approved', adminClient);
       expect(updated.status).toBe('approved');
     });
 
     test('[VALIDATION] should reject invalid status value', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       await expect(
-        updateScriptStatus(createdScript.id, 'invalid_status' as ScriptWorkflowStatus)
+        updateScriptStatus(createdScript.id, 'invalid_status' as ScriptWorkflowStatus, adminClient)
       ).rejects.toThrow('Invalid status');
     });
 
@@ -628,23 +643,24 @@ describe('scriptService - Integration Tests', () => {
 
       // Use SmartSuite ID format for non-existent script
       await expect(
-        updateScriptStatus('000000000000000000000000', 'in_review')
+        updateScriptStatus('000000000000000000000000', 'in_review', adminClient)
       ).rejects.toThrow();
     });
 
     test('should load components after status update', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin');
+      const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
       await saveScriptWithComponents(
         createdScript.id,
         null,
         'Test',
-        [{ number: 1, content: 'Test', wordCount: 1, hash: generateContentHash('Test') }]
+        [{ number: 1, content: 'Test', wordCount: 1, hash: generateContentHash('Test') }],
+        adminClient
       );
 
-      const updatedScript = await updateScriptStatus(createdScript.id, 'in_review');
+      const updatedScript = await updateScriptStatus(createdScript.id, 'in_review', adminClient);
 
       expect(updatedScript.components).toHaveLength(1);
       expect(updatedScript.status).toBe('in_review');
