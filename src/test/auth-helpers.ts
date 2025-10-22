@@ -130,7 +130,7 @@ export async function authenticateAndCache(
  * Switch to Cached Session
  *
  * Changes the active user by setting a cached session.
- * NO re-authentication - just swaps the session token.
+ * Falls back to sign out + refresh if setSession fails (CI compatibility).
  *
  * @param client - Supabase client instance
  * @param session - Cached session to activate
@@ -155,13 +155,27 @@ export async function switchToSession(
   client: SupabaseClient<Database>,
   session: Session
 ): Promise<void> {
-  const { error } = await client.auth.setSession({
+  // First try: Use setSession (works in most environments)
+  const { error: setError } = await client.auth.setSession({
     access_token: session.access_token,
     refresh_token: session.refresh_token,
   })
 
-  if (error) {
-    throw new Error(`Failed to switch session: ${error.message}`)
+  // If setSession succeeds, we're done
+  if (!setError) {
+    return
+  }
+
+  // Fallback for CI environments: Sign out and use refreshSession
+  // This handles cases where setSession fails due to session context issues
+  await client.auth.signOut()
+
+  const { error: refreshError } = await client.auth.refreshSession({
+    refresh_token: session.refresh_token,
+  })
+
+  if (refreshError) {
+    throw new Error(`Failed to switch session (both setSession and refreshSession failed): ${setError.message} | ${refreshError.message}`)
   }
 }
 
