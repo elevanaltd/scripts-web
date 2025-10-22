@@ -55,11 +55,12 @@ jobs:
       - name: Create test users in local database
         run: |
           # Create admin, client, and unauthorized test users with user_profiles
-          supabase db execute --file supabase/create-test-users.sql
+          # Note: Supabase CLI doesn't have 'db execute', use psql directly
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" < supabase/create-test-users.sql
 
           # Verify users were created
           echo "=== Test users created ==="
-          supabase db execute --sql "SELECT email, role FROM public.user_profiles WHERE email LIKE '%test%' ORDER BY email;"
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "SELECT email, role FROM public.user_profiles WHERE email LIKE '%test%' ORDER BY email;"
 
       - name: Override environment variables for local Supabase
         run: |
