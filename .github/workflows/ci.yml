@@ -51,12 +51,51 @@ jobs:
 
       - name: Start local Supabase instance
         run: |
-          supabase start
+          # Retry logic for transient Docker/network failures
+          MAX_ATTEMPTS=3
+          ATTEMPT=1
 
-          # Wait for GoTrue to be ready (health check)
-          echo "=== Waiting for GoTrue to be ready ==="
-          timeout 60 bash -c 'until curl -f http://127.0.0.1:54321/auth/v1/health > /dev/null 2>&1; do echo "Waiting for GoTrue..."; sleep 2; done'
-          echo "✅ GoTrue is ready"
+          while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+            echo "=== Attempt $ATTEMPT of $MAX_ATTEMPTS: Starting Supabase ==="
+
+            # Clean any previous failed attempts
+            if [ $ATTEMPT -gt 1 ]; then
+              echo "Cleaning up from previous attempt..."
+              supabase stop --no-backup || true
+              docker system prune -f || true
+              sleep 5
+            fi
+
+            # Start with extended timeout and debug output
+            if timeout 300 supabase start; then
+              echo "✅ Supabase started successfully"
+
+              # Wait for GoTrue to be ready (health check)
+              echo "=== Waiting for GoTrue to be ready ==="
+              if timeout 60 bash -c 'until curl -f http://127.0.0.1:54321/auth/v1/health > /dev/null 2>&1; do echo "Waiting for GoTrue..."; sleep 2; done'; then
+                echo "✅ GoTrue is ready"
+                break
+              else
+                echo "❌ GoTrue health check timeout"
+                supabase status || true
+              fi
+            else
+              echo "❌ Supabase start failed or timed out"
+              supabase status || true
+            fi
+
+            if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+              echo "❌ All attempts failed. Showing container logs..."
+              docker ps -a
+              docker logs supabase_db_dev 2>&1 | tail -50 || true
+              docker logs supabase_auth_dev 2>&1 | tail -50 || true
+              exit 1
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Retrying in 10 seconds..."
+            sleep 10
+          done
 
       - name: Apply database migrations
         run: |
