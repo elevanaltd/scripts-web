@@ -41,7 +41,6 @@ const ADMIN_PASSWORD = 'test-admin-password-123';
 // Test data - will be created dynamically
 // Using SmartSuite ID format (24-char hex) to match database schema
 let TEST_VIDEO_ID: string;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 let TEST_PROJECT_ID: string;
 let adminClient: SupabaseClient<Database>;
 
@@ -124,11 +123,13 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
       .single();
 
     if (projectError) {
-      console.warn('Could not create test project:', projectError);
-      TEST_PROJECT_ID = '507f1f77bcf86cd799439022'; // SmartSuite format fallback
-    } else {
-      TEST_PROJECT_ID = newProject.id;
+      throw new Error(
+        `CRITICAL: Failed to create test project. Integration tests cannot proceed.\n` +
+        `Error: ${projectError.message}\n` +
+        `Hint: Check admin authentication or database permissions.`
+      );
     }
+    TEST_PROJECT_ID = newProject.id;
   }
 
   // Create or get test video (unique per run)
@@ -154,12 +155,23 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
       .single();
 
     if (videoError) {
-      console.warn('Could not create test video:', videoError);
-      // Fallback to seeded video ID (UUID format from supabase/seed.sql line 39)
-      TEST_VIDEO_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd'; // 'Alpha Video 1' (EAV1)
-    } else {
-      TEST_VIDEO_ID = newVideo.id;
+      throw new Error(
+        `CRITICAL: Failed to create test video. Integration tests cannot proceed.\n` +
+        `Error: ${videoError.message}\n` +
+        `Hint: Ensure project with eav_code="${TEST_RUN_ID}" exists, or check database permissions.`
+      );
     }
+    TEST_VIDEO_ID = newVideo.id;
+  }
+
+  // CRITICAL: Validate test data setup succeeded
+  if (!TEST_VIDEO_ID || !TEST_PROJECT_ID) {
+    throw new Error(
+      `CRITICAL: Test data setup incomplete. Cannot proceed with integration tests.\n` +
+      `TEST_PROJECT_ID: ${TEST_PROJECT_ID || 'MISSING'}\n` +
+      `TEST_VIDEO_ID: ${TEST_VIDEO_ID || 'MISSING'}\n` +
+      `Hint: Check admin authentication, database seed data, or RLS policies.`
+    );
   }
 }
 
