@@ -64,30 +64,8 @@ jobs:
           # Using db push instead of db reset to skip automatic seeding
           supabase db push --local
 
-          # Manually run seed AFTER test users are created
-          echo "=== Schema initialized (migrations applied, seed deferred) ==="
-
-      - name: Create test users via Auth Admin API
-        run: |
-          # Use Supabase Auth Admin API instead of direct SQL
-          # This ensures proper GoTrue internal state (auth.users + auth.identities)
-          # See: scripts/create-test-users-via-api.mjs for implementation details
-
-          # Extract service role key from Supabase CLI
-          export SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r '.service_role_key')
-
-          # Run Node.js script to create users via Auth API
-          node scripts/create-test-users-via-api.mjs
-
-          echo "=== Test users created via Auth Admin API ==="
-
-      - name: Seed test data (projects, videos, scripts)
-        run: |
-          # Now run seed.sql AFTER test users exist
-          # seed.sql has TRUNCATE commands that won't affect auth.users
-          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" < supabase/seed.sql
-
-          echo "=== Test data seeded ==="
+          echo "=== Schema initialized (migrations applied) ==="
+          echo "=== Test users and data will be seeded after npm install ==="
 
       - name: Override environment variables for local Supabase
         run: |
@@ -122,6 +100,29 @@ jobs:
         run: npm install  # Using npm install instead of npm ci to generate package-lock.json
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create test users via Auth Admin API
+        run: |
+          # IMPORTANT: Must run AFTER npm install (@supabase/supabase-js dependency)
+          # Use Supabase Auth Admin API instead of direct SQL
+          # This ensures proper GoTrue internal state (auth.users + auth.identities)
+          # See: scripts/create-test-users-via-api.mjs for implementation details
+
+          # Extract service role key from Supabase CLI
+          export SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r '.service_role_key')
+
+          # Run Node.js script to create users via Auth API
+          node scripts/create-test-users-via-api.mjs
+
+          echo "=== Test users created via Auth Admin API ==="
+
+      - name: Seed test data (projects, videos, scripts)
+        run: |
+          # Seed test data AFTER users exist
+          # seed.sql has TRUNCATE commands that won't affect auth.users
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" < supabase/seed.sql
+
+          echo "=== Test data seeded ==="
 
       - name: Debug - Verify shared-lib installation
         run: |
