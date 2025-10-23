@@ -50,7 +50,13 @@ jobs:
           version: latest
 
       - name: Start local Supabase instance
-        run: supabase start
+        run: |
+          supabase start
+
+          # Wait for GoTrue to be ready (health check)
+          echo "=== Waiting for GoTrue to be ready ==="
+          timeout 60 bash -c 'until curl -f http://127.0.0.1:54321/auth/v1/health > /dev/null 2>&1; do echo "Waiting for GoTrue..."; sleep 2; done'
+          echo "✅ GoTrue is ready"
 
       - name: Apply database migrations
         run: |
