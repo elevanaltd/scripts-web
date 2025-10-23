@@ -93,6 +93,29 @@ export default defineConfig(({ mode }) => {
       VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
       VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
       VITE_SUPABASE_ANON_KEY: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'
+    },
+
+    // Coverage configuration (universal-test-engineer: 90% minimum threshold)
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json-summary', 'html'],
+      reportsDirectory: './coverage',
+      reportOnFailure: true, // Generate coverage even when tests fail
+      exclude: [
+        'node_modules/',
+        'src/test/**',
+        '**/*.test.{ts,tsx}',
+        '**/*.spec.{ts,tsx}',
+        'src/vite-env.d.ts',
+        '*.config.{ts,js}',
+        'dist/'
+      ],
+      thresholds: {
+        lines: 90,
+        functions: 90,
+        branches: 90,
+        statements: 90
+      }
     }
   }
   }

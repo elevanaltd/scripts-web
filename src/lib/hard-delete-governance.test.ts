@@ -1,41 +1,48 @@
 /**
  * Governed Hard-Delete Pathway - TDD Test File (Option C Architecture)
  *
- * PURPOSE: Validate TD-006 remediation - Restrictive FK + Governed Hard-Delete Pathway
+ * ⚠️ DEFERRED: Hard-Delete Infrastructure (Future Phase - Beyond B2)
  *
- * ARCHITECTURAL DECISION (principal-engineer approved):
+ * PURPOSE: Specification for future hard-delete governance pathway with:
  * - FK RESTRICT blocks accidental hard cascades (prevents data loss)
  * - Security-definer function provides GDPR/compliance pathway
  * - Soft-delete precondition enforced (must soft-delete first)
  * - All operations logged to audit table for accountability
  *
- * TEST METHODOLOGY:
- * - TDD RED phase: Tests written BEFORE migration implementation ✅
- * - Authenticated testing pattern (admin/client role validation)
- * - Rate limit prevention via auth delays (750ms MIN_AUTH_DELAY_MS)
- * - NO service key bypasses - validates real RLS security boundaries
+ * ARCHITECTURAL DECISION (principal-engineer approved):
+ * - Status: ✅ Option C approved (6-month HIGH viability)
+ * - Timeline: ⏳ DEFERRED beyond current B2 phase
+ * - Current System: Soft-delete only (UPDATE deleted=true)
+ * - Cleanup Strategy: Separate infrastructure phase (future)
  *
- * IMPLEMENTATION STATUS:
- * ✅ All 4 migrations applied successfully via Supabase MCP
- * ✅ FK constraint verified as RESTRICT (delete_rule confirmed)
- * ✅ Function exists and executes (tested via direct SQL)
- * ✅ Audit table created with proper RLS policies
- * ⏳ Tests marked .skip due to PostgREST schema cache lag (1-3min refresh time)
+ * CURRENT IMPLEMENTATION (PRODUCTION):
+ * ✅ Soft-delete exclusively via status flag (src/lib/comments.ts:542-599)
+ * ✅ cascade_soft_delete_comments() RPC function (working)
+ * ✅ All queries filter WHERE deleted=false
+ * 🚫 NO hard-delete RPC function in production schema
+ * 🚫 NO FK RESTRICT migrations applied
+ * 🚫 NO audit table for hard-deletes
  *
- * SCHEMA CACHE ISSUE:
- * Supabase PostgREST requires time to refresh schema cache after migrations.
- * Tests will pass once cache refreshes (typically 1-3 minutes, or after project restart).
- * Function verified working via mcp__supabase__execute_sql direct execution.
+ * WHY THESE TESTS ARE SKIPPED:
+ * 1. Tests validate future architecture (not current implementation)
+ * 2. Required migrations (202510211200*.sql) don't exist in codebase
+ * 3. hard_delete_comment_tree() RPC function not implemented
+ * 4. System uses soft-delete exclusively (architectural decision)
+ * 5. Hard-delete infrastructure deferred to future phase (B3+)
  *
- * TO RUN TESTS AFTER SCHEMA CACHE REFRESH:
- * Remove .skip from describe() block and run: npm test -- hard-delete-governance.test.ts
+ * WHEN TO UNSKIP THESE TESTS:
+ * 1. Create FK RESTRICT migrations (fk_comments_parent_id)
+ * 2. Implement hard_delete_comment_tree() RPC function
+ * 3. Create audit_comment_deletions table
+ * 4. Add RLS policies for audit table
+ * 5. Remove .skip from describe() block
+ * 6. Run: npm test -- hard-delete-governance.test.ts
  *
  * REFERENCES:
- * - TD-006 remediation task
- * - critical-engineer NO-GO ruling (dual cascade data loss risk)
- * - principal-engineer Option C approval (6-month HIGH viability)
- * - Migrations: supabase/migrations/202510211200*.sql
- * - Documentation: supabase/migrations/README.md
+ * - TD-006 Analysis: coordination/apps/scripts-web/analysis/TD-006-CASCADE-DELETE-PERFORMANCE-ANALYSIS.md
+ * - Option C Approval: coordination/apps/scripts-web/docs/002-DOC-TD-006-FINAL-APPROVAL-PACKAGE.md
+ * - Current Implementation: src/lib/comments.ts (cascade_soft_delete_comments)
+ * - Project Phase: coordination/PROJECT-CONTEXT.md (B2 Multi-App Expansion)
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
@@ -45,6 +52,9 @@ import type { Database } from '../types/database.types';
 // Test configuration - following established RLS testing pattern
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmmnmy.supabase.co';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Note: Tests explicitly skipped (describe.skip) due to deferred implementation
+// Previous conditional skip (describeIfEnv) removed - see file header for details
 
 // Test user credentials (following established pattern)
 const ADMIN_EMAIL = 'test-admin@elevana.com';
@@ -129,7 +139,10 @@ async function ensureTestScriptExists(client: SupabaseClient<Database>) {
   }
 }
 
-describe.skip('Governed Hard-Delete Pathway (Option C Architecture)', () => {
+// INTEGRATION TEST - DEFERRED (Future Phase Beyond B2)
+// ⚠️ Tests EXPLICITLY SKIPPED: Hard-delete infrastructure not implemented (see file header)
+// When implementing: Remove .skip, create migrations, implement RPC function
+describe.skip('Governed Hard-Delete Pathway (Option C Architecture - DEFERRED)', () => {
   let client: SupabaseClient<Database>;
   let adminUserId: string;
   let testCommentIds: string[] = [];

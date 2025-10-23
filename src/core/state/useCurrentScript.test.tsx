@@ -93,11 +93,12 @@ describe('useCurrentScript', () => {
       expect(result.current.isLoading).toBe(false)
     })
 
-    // Deferred: Integration test requiring NavigationProvider test utilities
-    // to programmatically set selectedVideo. Will be tested via component integration tests.
+    // INTEGRATION TEST - Deferred to component-level testing
+    // Requires: NavigationProvider with programmatic selectedVideo control
+    // Test Coverage: Will be validated in TipTapEditor integration tests
     it.skip('returns script data when video is selected and data loads', async () => {
-      // TODO: Implement once NavigationProvider test utilities exist
-      // Should verify: selectedVideo → triggers query → returns script data
+      // Component integration test will verify: selectedVideo → triggers query → returns script data
+      // This hook is a facade over useCurrentScriptData which IS unit tested
     })
   })
 

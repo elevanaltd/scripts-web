@@ -10,6 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
+    "test:integration": "VITE_SUPABASE_URL=http://127.0.0.1:54321 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH npm test -- src/lib/rls-security.test.ts src/lib/hard-delete-governance.test.ts",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
@@ -21,7 +22,7 @@
     "setup:test-users": "tsx scripts/setup-test-users.ts"
   },
   "dependencies": {
-    "@elevanaltd/shared-lib": "^0.1.7",
+    "@elevanaltd/shared-lib": "^0.1.8",
     "@supabase/supabase-js": "^2.76.1",
     "@tanstack/react-query": "^5.90.2",
     "@tiptap/extension-collaboration": "^2.1.13",
@@ -51,6 +52,7 @@
     "@typescript-eslint/parser": "^8.46.2",
     "@vercel/node": "^5.3.24",
     "@vitejs/plugin-react": "^4.1.1",
+    "@vitest/coverage-v8": "^3.2.4",
     "dotenv": "^17.2.2",
     "eslint": "^9.38.0",
     "eslint-plugin-react-hooks": "^5.2.0",

@@ -48,9 +48,9 @@ let unauthorizedSession: Session;
 import * as commentsLib from './comments';
 
 // Helper function to ensure test data exists
-async function ensureTestDataExists(client: SupabaseClient<Database>) {
-  // Assumes client is already authenticated as admin
-  // NO switchToSession needed - caller ensures correct session is active
+async function ensureTestDataExists(client: SupabaseClient<Database>, session: Session) {
+  // Use admin session to create test data (session reuse - no auth call needed)
+  await switchToSession(client, session);
 
   // Check if test script already exists
   const { data: existingScript } = await client
@@ -128,12 +128,8 @@ describe('Comments Infrastructure - Integration Tests', () => {
     clientSession = await authenticateAndCache(supabaseClient, TEST_USERS.CLIENT.email, TEST_USERS.CLIENT.password);
     unauthorizedSession = await authenticateAndCache(supabaseClient, TEST_USERS.UNAUTHORIZED.email, TEST_USERS.UNAUTHORIZED.password);
 
-    // After authentication, client is left in last authenticated user's session (unauthorized)
-    // Explicitly switch to admin session for test data setup
-    await switchToSession(supabaseClient, adminSession);
-
-    // Ensure test data exists (admin session now active)
-    await ensureTestDataExists(supabaseClient);
+    // Ensure test data exists (using admin session)
+    await ensureTestDataExists(supabaseClient, adminSession);
   });
 
   beforeEach(async () => {
@@ -170,8 +166,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
   describe('Comments Table Schema', () => {
     test('admin should create comment with required fields', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const { data, error } = await supabaseClient
         .from('comments')
@@ -198,8 +193,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
 
     test('admin should create threaded comment reply', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create parent comment first
       const { data: parentComment, error: parentError } = await supabaseClient
@@ -235,8 +229,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
 
     test('admin should resolve comment with resolved_at and resolved_by', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create comment
       const { data: comment, error: createError } = await supabaseClient
@@ -272,8 +265,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
   describe.skip('Comments RLS Security - CONTRACT-DRIVEN-CORRECTION', () => {
     test('admin should have full access to all comments', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Setup: Admin creates a comment
       const { error: createError } = await supabaseClient
@@ -303,8 +295,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
     test('client user should read comments from their assigned project', async () => {
       // Setup: Admin creates a comment first
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -314,7 +305,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
       });
 
       // Test: Client should see comment from their assigned project
-      await switchToSession(supabaseClient, clientSession);
+      await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
       const { data, error } = await supabaseClient
         .from('comments')
         .select('*')
@@ -327,8 +318,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
 
     test('client user can create comments (TODO: should be read-only)', async () => {
-      await switchToSession(supabaseClient, clientSession);
-      const clientUserId = getUserId(clientSession);
+      const clientUserId = await signInAsUser(supabaseClient, CLIENT_EMAIL, CLIENT_PASSWORD);
 
       // TODO: This test should be updated once RLS policies are fixed
       // Currently client users can create comments, but they should be read-only
@@ -354,8 +344,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
     test('unauthorized user should NOT see any comments', async () => {
       // Setup: Admin creates a comment first
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -365,7 +354,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
       });
 
       // Test: Unauthorized user tries to read
-      await switchToSession(supabaseClient, unauthorizedSession);
+      await signInAsUser(supabaseClient, UNAUTHORIZED_EMAIL, UNAUTHORIZED_PASSWORD);
       const { data, error } = await supabaseClient
         .from('comments')
         .select('*')
@@ -377,8 +366,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
 
     test('unauthorized user should NOT create comments', async () => {
-      await switchToSession(supabaseClient, unauthorizedSession);
-      const unauthorizedUserId = getUserId(unauthorizedSession);
+      const unauthorizedUserId = await signInAsUser(supabaseClient, UNAUTHORIZED_EMAIL, UNAUTHORIZED_PASSWORD);
 
       // Test: Unauthorized user tries to create a comment
       const { error } = await supabaseClient
@@ -399,8 +387,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
   describe('Comments Position Validation', () => {
     test('should validate position bounds (negative positions)', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const { error } = await supabaseClient
         .from('comments')
@@ -437,8 +424,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
       //
       // Business requirement is enforced at database level - skipping flaky test
 
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const { error } = await supabaseClient
         .from('comments')
@@ -461,8 +447,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
   describe('Comments Threading Behavior', () => {
     test('admin should cascade delete child comments when parent deleted', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create parent comment
       const { data: parentComment, error: parentError } = await supabaseClient
@@ -519,8 +504,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
   describe('Comments Performance Indexes', () => {
     test('admin should efficiently query comments by script_id', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create multiple comments
       const comments = [];
@@ -557,8 +541,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
 
     test('admin should efficiently filter by resolved status', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create resolved and unresolved comments
       await supabaseClient.from('comments').insert([
@@ -595,8 +578,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
 
   describe('getComments Performance - N+1 Query Fix', () => {
     test('should fetch all user profiles in single query, not N+1 queries', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create 5 comments from the same user (to test deduplication)
       for (let i = 0; i < 5; i++) {
@@ -643,8 +625,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
 
     test('should complete getComments for 50 comments in <200ms', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create 50 test comments to stress test performance
       const insertPromises = [];
@@ -680,8 +661,7 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
 
     test('should handle mixed users efficiently with single profile query', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create comments from admin user only (client has read-only access)
       await supabaseClient.from('comments').insert([
@@ -750,60 +730,30 @@ describe('Comments Infrastructure - Integration Tests', () => {
 describe('Comments CRUD Functions - TDD Phase', () => {
   let supabaseClient: SupabaseClient<Database>;
 
-  beforeAll(async () => {
-    // Create single client for this suite
+  beforeEach(async () => {
     supabaseClient = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // ARCHITECTURAL FIX: Authenticate ONCE per suite with THIS client
-    // NOTE: Each Supabase client instance has independent auth state
-    // We cannot reuse sessions from a different client instance
-    adminSession = await authenticateAndCache(supabaseClient, TEST_USERS.ADMIN.email, TEST_USERS.ADMIN.password);
-    clientSession = await authenticateAndCache(supabaseClient, TEST_USERS.CLIENT.email, TEST_USERS.CLIENT.password);
-    unauthorizedSession = await authenticateAndCache(supabaseClient, TEST_USERS.UNAUTHORIZED.email, TEST_USERS.UNAUTHORIZED.password);
-
-    // After authentication, client is in last authenticated session (unauthorized)
-    // Explicitly switch to admin for test data setup
-    await switchToSession(supabaseClient, adminSession);
-
-    // Ensure test data exists for CRUD tests (admin session active)
+    // Ensure test data exists for CRUD tests as well
     await ensureTestDataExists(supabaseClient);
   });
 
-  beforeEach(async () => {
-    // Clean up test comments before each test
-    try {
-      await switchToSession(supabaseClient, adminSession);
-      if (TEST_SCRIPT_ID) {
-        await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
-      }
-    } catch {
-      // Cleanup might fail but that's OK
-    }
-  });
-
   afterEach(async () => {
-    // Cleanup test comments after each test
+    // Cleanup test comments
     try {
-      await switchToSession(supabaseClient, adminSession);
+      await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       if (TEST_SCRIPT_ID) {
         await supabaseClient.from('comments').delete().eq('script_id', TEST_SCRIPT_ID);
       }
     } catch {
       // Cleanup might fail but that's OK
     }
-  });
-
-  afterAll(async () => {
-    // Final cleanup
     await supabaseClient.auth.signOut();
-    clearSessionCache();
   });
 
   describe('createComment Function - TDD (WILL FAIL)', () => {
     test('should create comment and return CommentWithUser type', async () => {
       // This test WILL FAIL - function doesn't exist yet
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const commentData = {
         scriptId: TEST_SCRIPT_ID,
@@ -823,8 +773,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should validate required fields and return error', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const invalidData = {
         scriptId: '',
@@ -845,8 +794,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
   describe('getComments Function - TDD (WILL FAIL)', () => {
     test('should fetch comments with user info and threading', async () => {
       // Setup: Create test comment first
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -866,8 +814,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
 
     test('should filter comments by resolved status', async () => {
       // Setup: Create resolved and unresolved comments
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       await supabaseClient.from('comments').insert([
         {
           script_id: TEST_SCRIPT_ID,
@@ -900,8 +847,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
   describe('updateComment Function', () => {
     test('should update comment content and return updated comment', async () => {
       // Setup: Create comment first
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       const { data: comment } = await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -923,8 +869,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should resolve comment with timestamp and user', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       const { data: comment } = await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -944,8 +889,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
 
   describe('deleteComment Function - TDD (WILL FAIL)', () => {
     test('should soft delete comment (mark as deleted)', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
       const { data: comment } = await supabaseClient.from('comments').insert({
         script_id: TEST_SCRIPT_ID,
         user_id: adminUserId,
@@ -972,8 +916,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
 
   describe('POSITION DRIFT PERSISTENCE - TDD (RED PHASE)', () => {
     test('should persist highlightedText when creating comment', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const commentData = {
         scriptId: TEST_SCRIPT_ID,
@@ -1000,8 +943,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should persist recovered positions after position recovery', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create comment with original positions
       const { data: comment } = await supabaseClient.from('comments').insert({
@@ -1044,8 +986,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
 
   describe('CASCADE SOFT DELETE - TDD (WILL FAIL)', () => {
     test('should cascade delete parent with one child', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create parent comment
       const { data: parent } = await supabaseClient.from('comments').insert({
@@ -1081,8 +1022,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should cascade delete parent with multiple children', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create parent comment
       const { data: parent } = await supabaseClient.from('comments').insert({
@@ -1124,8 +1064,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should cascade delete nested descendants (3+ levels)', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create parent comment
       const { data: parent } = await supabaseClient.from('comments').insert({
@@ -1180,8 +1119,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should only delete target comment when no children exist', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create standalone comment with no children
       const { data: comment } = await supabaseClient.from('comments').insert({
@@ -1216,8 +1154,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should handle deep nesting (5+ levels) efficiently', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create a deep comment chain (6 levels)
       type CommentRow = Database['public']['Tables']['comments']['Row'];
@@ -1265,8 +1202,7 @@ describe('Comments CRUD Functions - TDD Phase', () => {
     });
 
     test('should maintain transaction atomicity - all or nothing', async () => {
-      await switchToSession(supabaseClient, adminSession);
-      const adminUserId = getUserId(adminSession);
+      const adminUserId = await signInAsUser(supabaseClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       // Create parent and child
       const { data: parent } = await supabaseClient.from('comments').insert({

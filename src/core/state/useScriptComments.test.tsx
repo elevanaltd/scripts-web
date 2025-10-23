@@ -100,10 +100,12 @@ describe('useScriptComments', () => {
       expect(result.current.scriptId).toBeNull()
     })
 
-    // Deferred: Integration test requiring NavigationProvider test utilities
+    // INTEGRATION TEST - Deferred to component-level testing
+    // Requires: script data to be available (depends on useCurrentScriptData integration)
+    // Test Coverage: Will be validated in CommentSidebar integration tests
     it.skip('fetches and returns threaded comments when script is loaded', async () => {
-      // TODO: Implement once NavigationProvider test utilities exist
-      // Should verify: scriptId → triggers query → returns threaded comments
+      // Component integration test will verify: scriptId → triggers query → returns threaded comments
+      // This hook is a facade over useScriptCommentsQuery which IS unit tested
     })
   })
 
@@ -230,14 +232,16 @@ describe('useScriptComments', () => {
   })
 
   describe('Integration: Behavior Parity with Low-Level Hooks', () => {
-    // Deferred: Full integration test requiring NavigationProvider test utilities
+    // INTEGRATION TEST - Deferred to component-level testing
+    // Requires: Full React Query + Zustand coordination with async server responses
+    // Test Coverage: Will be validated in CommentSidebar integration tests
     it.skip('maintains optimistic UI pattern during comment creation', async () => {
-      // TODO: Implement once NavigationProvider test utilities exist
-      // Should verify:
+      // Component integration test will verify:
       // 1. createComment called → optimistic comment added to store
       // 2. Server responds → optimistic comment resolved to real ID
       // 3. Error case → optimistic comment removed
       // 4. Context-specific error message generated
+      // This hook coordinates useCommentMutations + useCommentStore which ARE unit tested
     })
   })
 
