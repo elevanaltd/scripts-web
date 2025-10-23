@@ -93,9 +93,10 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
 
   if (authError || !authData.user) {
     console.warn('Warning: Could not authenticate as admin for test data setup');
-    // Fallback IDs in SmartSuite format (24-char hex)
-    TEST_VIDEO_ID = '507f1f77bcf86cd799439011';
-    TEST_PROJECT_ID = '507f1f77bcf86cd799439022';
+    // Fallback IDs matching seed.sql (UUID format from supabase/seed.sql lines 38-41)
+    // dddddddd-dddd-dddd-dddd-dddddddddddd = 'Alpha Video 1' (EAV1)
+    TEST_VIDEO_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    TEST_PROJECT_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'; // 'Test Project Alpha' (EAV1)
     return;
   }
 
@@ -154,7 +155,8 @@ async function ensureTestDataExists(client: SupabaseClient<Database>) {
 
     if (videoError) {
       console.warn('Could not create test video:', videoError);
-      TEST_VIDEO_ID = '507f1f77bcf86cd799439011'; // SmartSuite format fallback
+      // Fallback to seeded video ID (UUID format from supabase/seed.sql line 39)
+      TEST_VIDEO_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd'; // 'Alpha Video 1' (EAV1)
     } else {
       TEST_VIDEO_ID = newVideo.id;
     }

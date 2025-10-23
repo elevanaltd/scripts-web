@@ -67,15 +67,19 @@ jobs:
           # Manually run seed AFTER test users are created
           echo "=== Schema initialized (migrations applied, seed deferred) ==="
 
-      - name: Create test users in local database
+      - name: Create test users via Auth Admin API
         run: |
-          # Create admin, client, and unauthorized test users with user_profiles
-          # Note: Supabase CLI doesn't have 'db execute', use psql directly
-          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" < supabase/create-test-users.sql
+          # Use Supabase Auth Admin API instead of direct SQL
+          # This ensures proper GoTrue internal state (auth.users + auth.identities)
+          # See: scripts/create-test-users-via-api.mjs for implementation details
 
-          # Verify users were created
-          echo "=== Test users created ==="
-          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "SELECT email, role FROM public.user_profiles WHERE email LIKE '%test%' ORDER BY email;"
+          # Extract service role key from Supabase CLI
+          export SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r '.service_role_key')
+
+          # Run Node.js script to create users via Auth API
+          node scripts/create-test-users-via-api.mjs
+
+          echo "=== Test users created via Auth Admin API ==="
 
       - name: Seed test data (projects, videos, scripts)
         run: |
@@ -147,6 +151,18 @@ jobs:
 
       - name: Run tests
         run: npm run test -- --run
+
+      - name: Capture Supabase logs on test failure
+        if: failure()
+        run: |
+          echo "=== Supabase Auth Logs ==="
+          docker logs supabase_auth_dev || echo "❌ Auth logs not available"
+          echo ""
+          echo "=== Supabase DB Logs ==="
+          docker logs supabase_db_dev || echo "❌ DB logs not available"
+          echo ""
+          echo "=== Supabase Status ==="
+          supabase status || echo "❌ Status not available"
 
       - name: Build
         run: npm run build
