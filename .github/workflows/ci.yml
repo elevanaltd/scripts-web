@@ -54,13 +54,12 @@ jobs:
 
       - name: Apply database migrations
         run: |
-          # Apply migrations to initialize schema (user_profiles, comments, etc.)
-          supabase db reset
+          # Apply migrations WITHOUT seed.sql (seed has TRUNCATE that might affect auth)
+          # Using db push instead of db reset to skip automatic seeding
+          supabase db push --local
 
-          # Verify schema exists (check for key tables)
-          echo "=== Verifying schema initialized ==="
-          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "\dt public.user_profiles"
-          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "\dt public.comments"
+          # Manually run seed AFTER test users are created
+          echo "=== Schema initialized (migrations applied, seed deferred) ==="
 
       - name: Create test users in local database
         run: |
@@ -71,6 +70,14 @@ jobs:
           # Verify users were created
           echo "=== Test users created ==="
           psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "SELECT email, role FROM public.user_profiles WHERE email LIKE '%test%' ORDER BY email;"
+
+      - name: Seed test data (projects, videos, scripts)
+        run: |
+          # Now run seed.sql AFTER test users exist
+          # seed.sql has TRUNCATE commands that won't affect auth.users
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" < supabase/seed.sql
+
+          echo "=== Test data seeded ==="
 
       - name: Override environment variables for local Supabase
         run: |
