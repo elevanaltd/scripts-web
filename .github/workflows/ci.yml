@@ -57,9 +57,10 @@ jobs:
           # Apply migrations to initialize schema (user_profiles, comments, etc.)
           supabase db reset
 
-          # Verify migrations applied
-          echo "=== Migrations applied ==="
-          supabase migration list
+          # Verify schema exists (check for key tables)
+          echo "=== Verifying schema initialized ==="
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "\dt public.user_profiles"
+          psql "postgresql://postgres:postgres@127.0.0.1:54322/postgres" -c "\dt public.comments"
 
       - name: Create test users in local database
         run: |
