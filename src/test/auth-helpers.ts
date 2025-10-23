@@ -130,12 +130,11 @@ export async function authenticateAndCache(
  * Switch to Cached Session
  *
  * Changes the active user by setting a cached session.
- * Falls back to sign out + refresh if setSession fails (CI compatibility).
- * Automatically handles session expiration and refreshes tokens.
+ * If session is invalid/expired, re-authenticates using stored credentials.
  *
  * @param client - Supabase client instance
  * @param session - Cached session to activate
- * @throws Error if session setting fails
+ * @throws Error if session setting and re-authentication both fail
  *
  * @example
  * ```typescript
@@ -143,12 +142,6 @@ export async function authenticateAndCache(
  *   await switchToSession(client, adminSession);
  *   const comment = await createComment(...);
  *   expect(comment).toBeDefined();
- * });
- *
- * test('client has limited access', async () => {
- *   await switchToSession(client, clientSession);
- *   const result = await attemptAdminAction();
- *   expect(result.error).toBeDefined();
  * });
  * ```
  */
@@ -167,29 +160,61 @@ export async function switchToSession(
     return;
   }
 
-  // setSession failed - try refresh fallback for CI environments
-  // This handles cases where setSession fails due to session context issues
+  // setSession failed - try refresh fallback
   await client.auth.signOut();
 
   const { data: refreshData, error: refreshError } = await client.auth.refreshSession({
     refresh_token: session.refresh_token,
   });
 
-  if (refreshError) {
+  if (!refreshError && refreshData.session) {
+    // Refresh succeeded - update session in place
+    Object.assign(session, refreshData.session);
+    return;
+  }
+
+  // Both failed - tokens are expired. Re-authenticate using stored credentials.
+  // Find which user this session belongs to by comparing user IDs
+  const userId = session.user.id;
+  let email: string | undefined;
+  let password: string | undefined;
+
+  if (userId === sessionCache.admin?.user?.id) {
+    email = TEST_USERS.ADMIN.email;
+    password = TEST_USERS.ADMIN.password;
+  } else if (userId === sessionCache.client?.user?.id) {
+    email = TEST_USERS.CLIENT.email;
+    password = TEST_USERS.CLIENT.password;
+  } else if (userId === sessionCache.unauthorized?.user?.id) {
+    email = TEST_USERS.UNAUTHORIZED.email;
+    password = TEST_USERS.UNAUTHORIZED.password;
+  }
+
+  if (!email || !password) {
     throw new Error(
-      `Failed to switch session (both setSession and refreshSession failed):\n` +
-      `setSession: ${setError.message}\n` +
-      `refreshSession: ${refreshError.message}\n` +
-      `Hint: Session tokens may be expired. This typically occurs in long-running test suites.\n` +
-      `Solution: Reduce test suite size or increase token expiration time.`
+      `Failed to switch session - tokens expired and could not identify user for re-authentication.\n` +
+      `userId: ${userId}\n` +
+      `Hint: This session may not have been created via authenticateAndCache().`
     );
   }
 
-  // Successfully refreshed - update the session object properties in place
-  // This ensures the caller's cached reference stays valid
-  if (refreshData.session) {
-    Object.assign(session, refreshData.session);
+  // Re-authenticate and update session
+  const { data: authData, error: authError } = await client.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (authError || !authData.session) {
+    throw new Error(
+      `Failed to re-authenticate expired session:\n` +
+      `Original error: ${setError.message}\n` +
+      `Refresh error: ${refreshError?.message}\n` +
+      `Re-auth error: ${authError?.message || 'No session returned'}`
+    );
   }
+
+  // Update session object with fresh credentials
+  Object.assign(session, authData.session);
 }
 
 /**
