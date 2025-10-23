@@ -131,6 +131,7 @@ export async function authenticateAndCache(
  *
  * Changes the active user by setting a cached session.
  * Falls back to sign out + refresh if setSession fails (CI compatibility).
+ * Validates session expiration and re-authenticates if needed.
  *
  * @param client - Supabase client instance
  * @param session - Cached session to activate
@@ -155,27 +156,69 @@ export async function switchToSession(
   client: SupabaseClient<Database>,
   session: Session
 ): Promise<void> {
-  // First try: Use setSession (works in most environments)
+  // Check if session is expired or near expiration
+  const now = Math.floor(Date.now() / 1000);
+  const expiresAt = session.expires_at || 0;
+  const isExpired = now >= expiresAt;
+  const isNearExpiry = (expiresAt - now) < 60; // Less than 60 seconds remaining
+
+  if (isExpired || isNearExpiry) {
+    // Session expired or about to expire - try refreshing first
+    await client.auth.signOut();
+
+    const { data: refreshData, error: refreshError } = await client.auth.refreshSession({
+      refresh_token: session.refresh_token,
+    });
+
+    if (!refreshError && refreshData.session) {
+      // Update the cached session object with new tokens
+      session.access_token = refreshData.session.access_token;
+      session.refresh_token = refreshData.session.refresh_token;
+      session.expires_at = refreshData.session.expires_at;
+      return;
+    }
+
+    // Refresh failed - session is truly invalid
+    throw new Error(
+      `Session expired and refresh failed. Re-authentication required.\n` +
+      `Error: ${refreshError?.message || 'Unknown refresh error'}\n` +
+      `Hint: Call authenticateAndCache() again to obtain a fresh session.`
+    );
+  }
+
+  // Session is valid - proceed with normal switching
   const { error: setError } = await client.auth.setSession({
     access_token: session.access_token,
     refresh_token: session.refresh_token,
-  })
+  });
 
   // If setSession succeeds, we're done
   if (!setError) {
-    return
+    return;
   }
 
   // Fallback for CI environments: Sign out and use refreshSession
   // This handles cases where setSession fails due to session context issues
-  await client.auth.signOut()
+  await client.auth.signOut();
 
-  const { error: refreshError } = await client.auth.refreshSession({
+  const { data: refreshData, error: refreshError } = await client.auth.refreshSession({
     refresh_token: session.refresh_token,
-  })
+  });
 
   if (refreshError) {
-    throw new Error(`Failed to switch session (both setSession and refreshSession failed): ${setError.message} | ${refreshError.message}`)
+    throw new Error(
+      `Failed to switch session (both setSession and refreshSession failed):\n` +
+      `setSession: ${setError.message}\n` +
+      `refreshSession: ${refreshError.message}\n` +
+      `Hint: Session may be expired. Call authenticateAndCache() to obtain a fresh session.`
+    );
+  }
+
+  // Update cached session with refreshed tokens
+  if (refreshData.session) {
+    session.access_token = refreshData.session.access_token;
+    session.refresh_token = refreshData.session.refresh_token;
+    session.expires_at = refreshData.session.expires_at;
   }
 }
 
