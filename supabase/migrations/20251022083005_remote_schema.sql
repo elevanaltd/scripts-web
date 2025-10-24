@@ -1051,19 +1051,20 @@ CREATE TABLE IF NOT EXISTS "public"."shots" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "scene_id" "uuid" NOT NULL,
     "shot_number" integer NOT NULL,
-    "status" "text",
-    "location" "text",
     "subject" "text",
     "action" "text",
     "shot_type" "text",
-    "int_ext" "text",
-    "requires_actor" boolean DEFAULT false,
-    "props" "text",
     "variant" "text",
-    "plot_notes" "text",
     "created_at" timestamp with time zone DEFAULT "now"(),
     "updated_at" timestamp with time zone DEFAULT "now"(),
-    CONSTRAINT "shots_int_ext_check" CHECK (("int_ext" = ANY (ARRAY['interior'::"text", 'exterior'::"text"])))
+    "location_start_point" "text",
+    "location_other" "text",
+    "subject_other" "text",
+    "shot_status" "text" DEFAULT 'no_work'::"text",
+    "owner_user_id" "uuid",
+    "tracking_type" "text",
+    CONSTRAINT "shots_pkey" PRIMARY KEY ("id"),
+    CONSTRAINT "shots_status_check" CHECK (("shot_status" = ANY (ARRAY['no_work'::"text", '1st_take'::"text", '2nd_take'::"text"])))
 );
 
 
@@ -1368,10 +1369,6 @@ CREATE INDEX "idx_shots_scene_id" ON "public"."shots" USING "btree" ("scene_id")
 
 
 
-CREATE INDEX "idx_shots_status" ON "public"."shots" USING "btree" ("status");
-
-
-
 CREATE INDEX "idx_shots_updated_at" ON "public"."shots" USING "btree" ("updated_at");
 
 
@@ -1553,6 +1550,9 @@ ALTER TABLE ONLY "public"."scripts"
 ALTER TABLE ONLY "public"."shots"
     ADD CONSTRAINT "shots_scene_id_fkey" FOREIGN KEY ("scene_id") REFERENCES "public"."scene_planning_state"("id") ON DELETE CASCADE;
 
+
+ALTER TABLE ONLY "public"."shots"
+    ADD CONSTRAINT "shots_owner_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."users"("id");
 
 
 ALTER TABLE ONLY "public"."user_clients"
