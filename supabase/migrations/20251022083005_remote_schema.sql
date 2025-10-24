@@ -1231,10 +1231,9 @@ ALTER TABLE ONLY "public"."scripts"
 
 
 
-ALTER TABLE ONLY "public"."shots"
-    ADD CONSTRAINT "shots_pkey" PRIMARY KEY ("id");
-
-
+-- Note: PRIMARY KEY constraint already defined in CREATE TABLE at line 1066
+-- Removing duplicate ALTER TABLE ADD CONSTRAINT shots_pkey to prevent error:
+-- "multiple primary keys for table shots are not allowed"
 
 ALTER TABLE ONLY "public"."shots"
     ADD CONSTRAINT "shots_scene_id_shot_number_key" UNIQUE ("scene_id", "shot_number");
