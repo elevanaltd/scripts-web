@@ -121,6 +121,33 @@ export type Database = {
           },
         ]
       }
+      dropdown_options: {
+        Row: {
+          created_at: string | null
+          field_name: string
+          id: string
+          option_label: string
+          option_value: string
+          sort_order: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          field_name: string
+          id?: string
+          option_label: string
+          option_value: string
+          sort_order?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          field_name?: string
+          id?: string
+          option_label?: string
+          option_value?: string
+          sort_order?: number | null
+        }
+        Relationships: []
+      }
       hard_delete_audit_log: {
         Row: {
           created_at: string
@@ -193,6 +220,35 @@ export type Database = {
         }
         Relationships: []
       }
+      scene_planning_state: {
+        Row: {
+          created_at: string | null
+          id: string
+          script_component_id: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          script_component_id: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          script_component_id?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scene_planning_state_script_component_id_fkey"
+            columns: ["script_component_id"]
+            isOneToOne: true
+            referencedRelation: "script_components"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       script_components: {
         Row: {
           component_number: number
@@ -235,6 +291,45 @@ export type Database = {
           },
         ]
       }
+      script_locks: {
+        Row: {
+          is_manual_unlock: boolean | null
+          last_heartbeat: string
+          locked_at: string
+          locked_by: string
+          script_id: string
+        }
+        Insert: {
+          is_manual_unlock?: boolean | null
+          last_heartbeat?: string
+          locked_at?: string
+          locked_by: string
+          script_id: string
+        }
+        Update: {
+          is_manual_unlock?: boolean | null
+          last_heartbeat?: string
+          locked_at?: string
+          locked_by?: string
+          script_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_locks_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: true
+            referencedRelation: "scripts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "script_locks_script_id_fkey"
+            columns: ["script_id"]
+            isOneToOne: true
+            referencedRelation: "scripts_with_eav"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scripts: {
         Row: {
           component_count: number | null
@@ -272,6 +367,68 @@ export type Database = {
             columns: ["video_id"]
             isOneToOne: true
             referencedRelation: "videos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shots: {
+        Row: {
+          action: string | null
+          created_at: string | null
+          id: string
+          location_other: string | null
+          location_start_point: string | null
+          owner_user_id: string | null
+          scene_id: string
+          shot_number: number
+          shot_status: string | null
+          shot_type: string | null
+          subject: string | null
+          subject_other: string | null
+          tracking_type: string | null
+          updated_at: string | null
+          variant: string | null
+        }
+        Insert: {
+          action?: string | null
+          created_at?: string | null
+          id?: string
+          location_other?: string | null
+          location_start_point?: string | null
+          owner_user_id?: string | null
+          scene_id: string
+          shot_number: number
+          shot_status?: string | null
+          shot_type?: string | null
+          subject?: string | null
+          subject_other?: string | null
+          tracking_type?: string | null
+          updated_at?: string | null
+          variant?: string | null
+        }
+        Update: {
+          action?: string | null
+          created_at?: string | null
+          id?: string
+          location_other?: string | null
+          location_start_point?: string | null
+          owner_user_id?: string | null
+          scene_id?: string
+          shot_number?: number
+          shot_status?: string | null
+          shot_type?: string | null
+          subject?: string | null
+          subject_other?: string | null
+          tracking_type?: string | null
+          updated_at?: string | null
+          variant?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shots_scene_id_fkey"
+            columns: ["scene_id"]
+            isOneToOne: false
+            referencedRelation: "scene_planning_state"
             referencedColumns: ["id"]
           },
         ]
@@ -407,6 +564,15 @@ export type Database = {
       }
     }
     Functions: {
+      acquire_script_lock: {
+        Args: { p_script_id: string }
+        Returns: {
+          locked_at: string
+          locked_by_name: string
+          locked_by_user_id: string
+          success: boolean
+        }[]
+      }
       cascade_soft_delete_comments: {
         Args: { comment_ids: string[] }
         Returns: {
@@ -414,7 +580,7 @@ export type Database = {
         }[]
       }
       check_client_access: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           can_see_projects: boolean
           can_see_user_clients: boolean
@@ -423,30 +589,7 @@ export type Database = {
           current_user_role: string
         }[]
       }
-      citext: {
-        Args: { "": boolean } | { "": string } | { "": unknown }
-        Returns: string
-      }
-      citext_hash: {
-        Args: { "": string }
-        Returns: number
-      }
-      citextin: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      citextout: {
-        Args: { "": string }
-        Returns: unknown
-      }
-      citextrecv: {
-        Args: { "": unknown }
-        Returns: string
-      }
-      citextsend: {
-        Args: { "": string }
-        Returns: string
-      }
+      cleanup_expired_locks: { Args: never; Returns: number }
       get_comment_descendants: {
         Args: { parent_id: string }
         Returns: {
@@ -454,15 +597,12 @@ export type Database = {
         }[]
       }
       get_user_accessible_comment_ids: {
-        Args: Record<PropertyKey, never>
+        Args: never
         Returns: {
           comment_id: string
         }[]
       }
-      get_user_role: {
-        Args: Record<PropertyKey, never>
-        Returns: string
-      }
+      get_user_role: { Args: never; Returns: string }
       hard_delete_comment_tree: {
         Args: { p_comment_id: string; p_reason?: string }
         Returns: Json
@@ -475,18 +615,12 @@ export type Database = {
         Args: { instance: Json; schema: Json }
         Returns: boolean
       }
-      jsonschema_is_valid: {
-        Args: { schema: Json }
-        Returns: boolean
-      }
+      jsonschema_is_valid: { Args: { schema: Json }; Returns: boolean }
       jsonschema_validation_errors: {
         Args: { instance: Json; schema: Json }
         Returns: string[]
       }
-      refresh_user_accessible_scripts: {
-        Args: Record<PropertyKey, never>
-        Returns: undefined
-      }
+      refresh_user_accessible_scripts: { Args: never; Returns: undefined }
       save_script_with_components: {
         Args: {
           p_components: Json
@@ -504,6 +638,12 @@ export type Database = {
           video_id: string | null
           yjs_state: string | null
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "scripts"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
       update_script_status: {
         Args: { p_new_status: string; p_script_id: string }
@@ -517,6 +657,12 @@ export type Database = {
           video_id: string | null
           yjs_state: string | null
         }[]
+        SetofOptions: {
+          from: "*"
+          to: "scripts"
+          isOneToOne: false
+          isSetofReturn: true
+        }
       }
     }
     Enums: {
