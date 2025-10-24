@@ -29,6 +29,9 @@
  * Authority: test-methodology-guardian (ACCEPTABLE GAP verdict, 2025-10-24)
  */
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unused-vars */
+
 import { describe, it, expect, beforeEach } from 'vitest'
 import { supabase } from './supabase'
 import type { User } from '@supabase/supabase-js'
