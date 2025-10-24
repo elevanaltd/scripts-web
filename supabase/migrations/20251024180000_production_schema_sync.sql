@@ -13,76 +13,13 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 
-CREATE SCHEMA IF NOT EXISTS "hub";
+CREATE SCHEMA IF NOT EXISTS "public";
 
 
-ALTER SCHEMA "hub" OWNER TO "postgres";
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "extensions";
-
-
-
-
+ALTER SCHEMA "public" OWNER TO "pg_database_owner";
 
 
 COMMENT ON SCHEMA "public" IS 'standard public schema';
-
-
-
-CREATE EXTENSION IF NOT EXISTS "citext" WITH SCHEMA "public";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "moddatetime" WITH SCHEMA "public";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_graphql" WITH SCHEMA "graphql";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_jsonschema" WITH SCHEMA "public";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "supabase_vault" WITH SCHEMA "vault";
-
-
-
-
-
-
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
-
-
-
 
 
 
@@ -99,41 +36,121 @@ CREATE TYPE "public"."script_workflow_status" AS ENUM (
 ALTER TYPE "public"."script_workflow_status" OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "hub"."attach_moddatetime_trigger"("tbl" "regclass") RETURNS "void"
-    LANGUAGE "plpgsql"
+CREATE OR REPLACE FUNCTION "public"."acquire_script_lock"("p_script_id" "uuid") RETURNS TABLE("success" boolean, "locked_by_user_id" "uuid", "locked_by_name" "text", "locked_at" timestamp with time zone)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
     AS $$
-begin
-  execute format('create trigger tg_moddatetime_%s before update on %s for each row execute function moddatetime(updated_at);',
-                 split_part(tbl::text, '.', 2), tbl);
-exception when duplicate_object then null;
-end; $$;
+DECLARE
+  v_existing_lock RECORD;
+  v_current_user UUID;
+  v_display_name TEXT;
+BEGIN
+  -- Get current user (wrapped for empty search_path)
+  v_current_user := (SELECT auth.uid());
 
+  -- Verify user has access to this script
+  IF NOT EXISTS (
+    SELECT 1 FROM public.user_accessible_scripts uas
+    WHERE uas.script_id = p_script_id
+      AND uas.user_id = v_current_user
+  ) THEN
+    -- Return failure (no access)
+    RETURN QUERY SELECT
+      FALSE::BOOLEAN,
+      NULL::UUID,
+      'No access to script'::TEXT,
+      NULL::TIMESTAMPTZ;
+    RETURN;
+  END IF;
 
-ALTER FUNCTION "hub"."attach_moddatetime_trigger"("tbl" "regclass") OWNER TO "postgres";
+  -- Get user display name for return value
+  SELECT up.display_name INTO v_display_name
+  FROM public.user_profiles up
+  WHERE up.id = v_current_user;
 
+  -- CRITICAL: Use SELECT FOR UPDATE NOWAIT to prevent race conditions
+  -- Without this, concurrent acquisitions can both succeed
+  -- Expected collisions: 50/hour at production scale (10 users × 100 scripts)
+  BEGIN
+    SELECT sl.locked_by, sl.locked_at, sl.last_heartbeat, up.display_name
+    INTO v_existing_lock
+    FROM public.script_locks sl
+    JOIN public.user_profiles up ON up.id = sl.locked_by
+    WHERE sl.script_id = p_script_id
+    FOR UPDATE NOWAIT;  -- Locks row during check, fails fast if locked
 
-CREATE OR REPLACE FUNCTION "hub"."is_admin_or_employee"() RETURNS boolean
-    LANGUAGE "sql" STABLE
-    AS $$
-  select exists (select 1 from public.user_profiles up where up.id = auth.uid() and up.role in ('admin','employee'))
+  EXCEPTION WHEN lock_not_available THEN
+    -- Another transaction is acquiring this lock right now
+    -- Wait a tiny bit and try to read the result
+    PERFORM pg_sleep(0.05); -- 50ms
+
+    -- Read the lock that the other transaction created
+    SELECT sl.locked_by, sl.locked_at, sl.last_heartbeat, up.display_name
+    INTO v_existing_lock
+    FROM public.script_locks sl
+    JOIN public.user_profiles up ON up.id = sl.locked_by
+    WHERE sl.script_id = p_script_id;
+  END;
+
+  -- Check if lock exists and is still valid
+  IF FOUND THEN
+    -- If same user, refresh the lock
+    IF v_existing_lock.locked_by = v_current_user THEN
+      -- Update heartbeat and return success
+      UPDATE public.script_locks
+      SET last_heartbeat = NOW(),
+          is_manual_unlock = FALSE
+      WHERE script_id = p_script_id;
+
+      RETURN QUERY SELECT
+        TRUE,
+        v_current_user,
+        v_display_name,
+        v_existing_lock.locked_at;
+      RETURN;
+    END IF;
+
+    -- Different user - verify lock hasn't expired (30 min timeout)
+    IF v_existing_lock.last_heartbeat > NOW() - INTERVAL '30 minutes' THEN
+      -- Lock still valid, return failure with lock holder info
+      RETURN QUERY SELECT
+        FALSE,
+        v_existing_lock.locked_by,
+        v_existing_lock.display_name,
+        v_existing_lock.locked_at;
+      RETURN;
+    ELSE
+      -- Expired, delete it
+      DELETE FROM public.script_locks WHERE script_id = p_script_id;
+    END IF;
+  END IF;
+
+  -- No valid lock exists - acquire it
+  -- Use INSERT ... ON CONFLICT to handle race where lock was just created
+  INSERT INTO public.script_locks (script_id, locked_by, locked_at, last_heartbeat)
+  VALUES (p_script_id, v_current_user, NOW(), NOW())
+  ON CONFLICT (script_id) DO UPDATE
+  SET locked_by = v_current_user,
+      locked_at = NOW(),
+      last_heartbeat = NOW(),
+      is_manual_unlock = FALSE
+  WHERE script_locks.last_heartbeat <= NOW() - INTERVAL '30 minutes';  -- Only if expired
+
+  -- Return success
+  RETURN QUERY SELECT
+    TRUE,
+    v_current_user,
+    v_display_name,
+    NOW()::TIMESTAMPTZ;
+END;
 $$;
 
 
-ALTER FUNCTION "hub"."is_admin_or_employee"() OWNER TO "postgres";
+ALTER FUNCTION "public"."acquire_script_lock"("p_script_id" "uuid") OWNER TO "postgres";
 
 
-CREATE OR REPLACE FUNCTION "hub"."is_client_of_project"("p_project_id" "text") RETURNS boolean
-    LANGUAGE "sql" STABLE
-    AS $$
-  select exists (
-    select 1 from public.projects p
-    join public.user_clients uc on uc.user_id = auth.uid()
-    where p.id = p_project_id and p.client_filter = uc.client_filter
-  )
-$$;
+COMMENT ON FUNCTION "public"."acquire_script_lock"("p_script_id" "uuid") IS 'Acquires edit lock for script. Uses SELECT FOR UPDATE NOWAIT to prevent race conditions. Automatically cleans up expired locks (30min timeout). Returns success + lock holder info. Critical fix 2025-10-24: Added search_path protection.';
 
-
-ALTER FUNCTION "hub"."is_client_of_project"("p_project_id" "text") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."block_direct_component_writes"() RETURNS "trigger"
@@ -224,25 +241,62 @@ $$;
 ALTER FUNCTION "public"."check_client_access"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."cleanup_expired_locks"() RETURNS integer
+    LANGUAGE "sql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+  WITH deleted AS (
+    DELETE FROM public.script_locks
+    WHERE last_heartbeat < NOW() - INTERVAL '30 minutes'
+    RETURNING 1
+  )
+  SELECT COUNT(*)::INTEGER FROM deleted;
+$$;
+
+
+ALTER FUNCTION "public"."cleanup_expired_locks"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."cleanup_expired_locks"() IS 'Cleans up expired locks (30min timeout). Scheduled via pg_cron every 10 minutes. Critical fix 2025-10-24: Added search_path protection.';
+
+
+
 CREATE OR REPLACE FUNCTION "public"."comments_broadcast_trigger"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
     AS $$
 BEGIN
-  PERFORM realtime.broadcast_changes(
-    'room:' || COALESCE(NEW.script_id, OLD.script_id)::text || ':comments',
-    TG_OP,
-    TG_OP,
-    TG_TABLE_NAME,
-    TG_TABLE_SCHEMA,
-    NEW,
-    OLD
+  -- Explicitly qualify realtime schema to work with empty search_path
+  -- This prevents attackers from creating malicious "realtime" schema functions
+  PERFORM "realtime"."broadcast_changes"(
+    'room:' || COALESCE("NEW"."script_id", "OLD"."script_id")::"text" || ':comments',
+    "TG_OP",
+    "TG_OP",
+    "TG_TABLE_NAME",
+    "TG_TABLE_SCHEMA",
+    "NEW",
+    "OLD"
   );
-  RETURN COALESCE(NEW, OLD);
+  RETURN COALESCE("NEW", "OLD");
 END;
 $$;
 
 
 ALTER FUNCTION "public"."comments_broadcast_trigger"() OWNER TO "postgres";
+
+
+COMMENT ON FUNCTION "public"."comments_broadcast_trigger"() IS 'Emergency security fix 2025-10-24: Added SET search_path TO '''' to prevent CVE-2018-1058 class schema injection attacks.
+
+   VULNERABILITY: SECURITY DEFINER functions without search_path allow attackers to create malicious
+   schemas/functions that execute with elevated privileges (postgres superuser).
+
+   REMEDIATION: All SECURITY DEFINER functions MUST set search_path per constitutional standard.
+
+   Security-Specialist: CRITICAL vulnerability - privilege escalation to postgres superuser possible.
+   Critical-Engineer: BLOCKING before any new deployments.
+
+   Trigger: Broadcasts comment changes to realtime subscriptions on INSERT/UPDATE/DELETE.';
+
 
 
 CREATE OR REPLACE FUNCTION "public"."ensure_user_profile_on_signup"() RETURNS "trigger"
@@ -532,8 +586,28 @@ DECLARE
     v_user_role text;
     v_script_exists boolean;
     v_has_access boolean;
+    v_current_user UUID;
 BEGIN
-    -- Get user role
+    -- Get current user
+    v_current_user := auth.uid();
+
+    -- =========================================================================
+    -- CRITICAL: Verify caller holds active lock before allowing save
+    -- Without this, admin force-unlock can lead to data loss
+    -- Critical-Engineer finding: 2025-10-24
+    -- =========================================================================
+    IF NOT EXISTS (
+      SELECT 1 FROM public.script_locks sl
+      WHERE sl.script_id = p_script_id
+        AND sl.locked_by = v_current_user
+        AND sl.last_heartbeat > NOW() - INTERVAL '30 minutes'
+    ) THEN
+      RAISE EXCEPTION 'Cannot save: You no longer hold the edit lock for this script'
+        USING ERRCODE = 'insufficient_privilege',
+              HINT = 'Another user may have acquired the lock, or your session expired. Refresh to see current lock status.';
+    END IF;
+
+    -- Get user role (existing logic preserved)
     v_user_role := public.get_user_role();
 
     -- Check if script exists
@@ -556,12 +630,13 @@ BEGIN
     -- Log the attempt
     INSERT INTO public.audit_log (user_id, action, target_resource, details, status)
     VALUES (
-        auth.uid(),
+        v_current_user,
         'save_script',
         p_script_id::text,
         jsonb_build_object(
             'role', v_user_role,
-            'script_exists', v_script_exists
+            'script_exists', v_script_exists,
+            'lock_verified', true
         ),
         CASE WHEN v_has_access THEN 'allowed' ELSE 'denied' END
     );
@@ -587,15 +662,20 @@ BEGIN
     -- Delete existing components
     DELETE FROM public.script_components WHERE script_id = p_script_id;
 
-    -- Insert new components with CORRECTED field names
-    -- Client sends: {number, content, wordCount, hash}
+    -- Insert new components
     INSERT INTO public.script_components (script_id, component_number, content, word_count)
     SELECT
         p_script_id,
-        (comp->>'number')::int,       -- FIXED: was 'component_number'
-        comp->>'content',              -- OK
-        (comp->>'wordCount')::int      -- FIXED: was 'word_count'
+        (comp->>'number')::int,
+        comp->>'content',
+        (comp->>'wordCount')::int
     FROM jsonb_array_elements(p_components) AS comp;
+
+    -- Update lock heartbeat on successful save
+    UPDATE public.script_locks
+    SET last_heartbeat = NOW()
+    WHERE script_id = p_script_id
+      AND locked_by = v_current_user;
 
     -- Return the updated script
     RETURN QUERY SELECT * FROM public.scripts WHERE id = p_script_id;
@@ -608,7 +688,7 @@ $$;
 ALTER FUNCTION "public"."save_script_with_components"("p_script_id" "uuid", "p_yjs_state" "text", "p_plain_text" "text", "p_components" "jsonb") OWNER TO "postgres";
 
 
-COMMENT ON FUNCTION "public"."save_script_with_components"("p_script_id" "uuid", "p_yjs_state" "text", "p_plain_text" "text", "p_components" "jsonb") IS 'Authorized entry point for component writes. Fixed 2025-10-21: JSON field names now match client format (number, wordCount instead of component_number, word_count).';
+COMMENT ON FUNCTION "public"."save_script_with_components"("p_script_id" "uuid", "p_yjs_state" "text", "p_plain_text" "text", "p_components" "jsonb") IS 'Authorized entry point for script saves. CRITICAL FIX 2025-10-25: Added lock verification to prevent data loss from concurrent edits. Verifies caller holds active lock before allowing save.';
 
 
 
@@ -702,115 +782,6 @@ $$;
 ALTER FUNCTION "public"."update_updated_at_column"() OWNER TO "postgres";
 
 
-CREATE TABLE IF NOT EXISTS "hub"."bathrooms" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "project_id" "text" NOT NULL,
-    "room_type" "text",
-    "fixtures_fittings" "text",
-    "ventilation" "text",
-    "tiling_details" "text",
-    "notes" "text",
-    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "hub"."bathrooms" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "hub"."equipment" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "project_id" "text" NOT NULL,
-    "type" "text",
-    "make" "text",
-    "model" "text",
-    "features" "text",
-    "notes" "text",
-    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "hub"."equipment" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "hub"."json_schemas" (
-    "section" "text" NOT NULL,
-    "schema" "jsonb" NOT NULL,
-    "version" integer DEFAULT 1 NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "hub"."json_schemas" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "hub"."kitchens" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "project_id" "text" NOT NULL,
-    "kitchen_units" "text",
-    "worktops" "text",
-    "splashback" "text",
-    "sink_tap_details" "text",
-    "notes" "text",
-    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "hub"."kitchens" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "hub"."project_profile" (
-    "project_id" "text" NOT NULL,
-    "developer_name" "text",
-    "development_name" "text",
-    "contact_email" "public"."citext",
-    "contact_phone" "text",
-    "project_address" "text",
-    "start_date" "date",
-    "completion_date" "date",
-    "notes" "text",
-    "metadata" "jsonb" DEFAULT '{}'::"jsonb",
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "hub"."project_profile" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "hub"."section_documents" (
-    "project_id" "text" NOT NULL,
-    "section" "text" NOT NULL,
-    "data" "jsonb" DEFAULT '{}'::"jsonb" NOT NULL,
-    "schema_version" integer DEFAULT 1 NOT NULL,
-    "status" "text" DEFAULT 'draft'::"text" NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL,
-    CONSTRAINT "section_documents_section_check" CHECK (("section" = ANY (ARRAY['policies'::"text", 'structure'::"text", 'electrical_lighting'::"text", 'plumbing'::"text", 'warranties'::"text", 'finishes'::"text", 'communications'::"text", 'project_notes'::"text"]))),
-    CONSTRAINT "section_documents_status_check" CHECK (("status" = ANY (ARRAY['draft'::"text", 'in_review'::"text", 'approved'::"text"])))
-);
-
-
-ALTER TABLE "hub"."section_documents" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "hub"."section_progress" (
-    "project_id" "text" NOT NULL,
-    "section" "text" NOT NULL,
-    "percent_complete" numeric(5,2) DEFAULT 0 NOT NULL,
-    "updated_at" timestamp with time zone DEFAULT "now"() NOT NULL
-);
-
-
-ALTER TABLE "hub"."section_progress" OWNER TO "postgres";
-
-
 CREATE TABLE IF NOT EXISTS "public"."projects" (
     "id" "text" NOT NULL,
     "title" "text" NOT NULL,
@@ -830,42 +801,6 @@ ALTER TABLE "public"."projects" OWNER TO "postgres";
 
 COMMENT ON COLUMN "public"."projects"."eav_code" IS 'EAV code from Project';
 
-
-
-CREATE OR REPLACE VIEW "hub"."v_project_data_entry_progress" AS
- SELECT "id" AS "project_id",
-    ((((((((((((EXISTS ( SELECT 1
-           FROM "hub"."project_profile" "pp"
-          WHERE ("pp"."project_id" = "p"."id"))))::integer + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'policies'::"text")))))::integer) + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'structure'::"text")))))::integer) + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'electrical_lighting'::"text")))))::integer) + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'plumbing'::"text")))))::integer) + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'warranties'::"text")))))::integer) + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'finishes'::"text")))))::integer) + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'communications'::"text")))))::integer) + ((EXISTS ( SELECT 1
-           FROM "hub"."section_documents" "sd"
-          WHERE (("sd"."project_id" = "p"."id") AND ("sd"."section" = 'project_notes'::"text")))))::integer))::numeric * (100.0 / 9.0)) AS "simple_completion_pct",
-    COALESCE(( SELECT "count"(*) AS "count"
-           FROM "hub"."bathrooms" "b"
-          WHERE ("b"."project_id" = "p"."id")), (0)::bigint) AS "bathrooms_count",
-    COALESCE(( SELECT "count"(*) AS "count"
-           FROM "hub"."kitchens" "k"
-          WHERE ("k"."project_id" = "p"."id")), (0)::bigint) AS "kitchens_count",
-    COALESCE(( SELECT "count"(*) AS "count"
-           FROM "hub"."equipment" "e"
-          WHERE ("e"."project_id" = "p"."id")), (0)::bigint) AS "equipment_count"
-   FROM "public"."projects" "p";
-
-
-ALTER VIEW "hub"."v_project_data_entry_progress" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."audit_log" (
@@ -946,7 +881,7 @@ CREATE TABLE IF NOT EXISTS "public"."dropdown_options" (
     "option_label" "text" NOT NULL,
     "sort_order" integer DEFAULT 0,
     "created_at" timestamp with time zone DEFAULT "now"(),
-    CONSTRAINT "dropdown_options_field_name_check" CHECK (("field_name" = ANY (ARRAY['status'::"text", 'location'::"text", 'action'::"text", 'shot_type'::"text", 'subject'::"text"])))
+    CONSTRAINT "dropdown_options_field_name_check" CHECK (("field_name" = ANY (ARRAY['shot_type'::"text", 'location_start_point'::"text", 'tracking_type'::"text", 'subject'::"text"])))
 );
 
 
@@ -967,20 +902,6 @@ CREATE TABLE IF NOT EXISTS "public"."hard_delete_audit_log" (
 
 
 ALTER TABLE "public"."hard_delete_audit_log" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."production_notes" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "shot_id" "uuid" NOT NULL,
-    "author_id" "uuid" NOT NULL,
-    "content" "text" NOT NULL,
-    "parent_id" "uuid",
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "updated_at" timestamp with time zone DEFAULT "now"()
-);
-
-
-ALTER TABLE "public"."production_notes" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."scene_planning_state" (
@@ -1008,6 +929,22 @@ ALTER TABLE "public"."script_components" OWNER TO "postgres";
 
 
 COMMENT ON TABLE "public"."script_components" IS 'Component spine table. Direct writes blocked by trigger - use save_script_with_components() function only. Ensures component identity stability (I1 immutable requirement) across all 7 EAV apps.';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."script_locks" (
+    "script_id" "uuid" NOT NULL,
+    "locked_by" "uuid" NOT NULL,
+    "locked_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "last_heartbeat" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "is_manual_unlock" boolean DEFAULT false
+);
+
+
+ALTER TABLE "public"."script_locks" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."script_locks" IS 'Smart Edit Locking: Prevents concurrent edit conflicts. Lock expires after 30 minutes without heartbeat. Implements Lesson 005 pattern with SELECT FOR UPDATE NOWAIT race prevention.';
 
 
 
@@ -1060,15 +997,50 @@ CREATE TABLE IF NOT EXISTS "public"."shots" (
     "location_start_point" "text",
     "location_other" "text",
     "subject_other" "text",
-    "shot_status" "text" DEFAULT 'no_work'::"text",
     "owner_user_id" "uuid",
     "tracking_type" "text",
-    CONSTRAINT "shots_pkey" PRIMARY KEY ("id"),
+    "shot_status" "text" DEFAULT 'no_work'::"text",
     CONSTRAINT "shots_status_check" CHECK (("shot_status" = ANY (ARRAY['no_work'::"text", '1st_take'::"text", '2nd_take'::"text"])))
 );
 
 
 ALTER TABLE "public"."shots" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."shots"."subject" IS 'Dropdown from dropdown_options with "Other" option. If "Other", fill subject_other.';
+
+
+
+COMMENT ON COLUMN "public"."shots"."action" IS 'Free text: demo, actor movement, etc';
+
+
+
+COMMENT ON COLUMN "public"."shots"."shot_type" IS 'Dropdown from dropdown_options: WS, MID, CU, FP, OBJ-L, OBJ-R, UNDER (fixed list, no other)';
+
+
+
+COMMENT ON COLUMN "public"."shots"."variant" IS 'Free text: front door, internal door, siemens, bosch, etc';
+
+
+
+COMMENT ON COLUMN "public"."shots"."location_start_point" IS 'Dropdown from dropdown_options with "Other" option. If "Other", fill location_other.';
+
+
+
+COMMENT ON COLUMN "public"."shots"."location_other" IS 'Free text when location_start_point = "Other"';
+
+
+
+COMMENT ON COLUMN "public"."shots"."subject_other" IS 'Free text when subject = "Other"';
+
+
+
+COMMENT ON COLUMN "public"."shots"."owner_user_id" IS 'Owner user ID from auth.users. Not shown in scenes app UI.';
+
+
+
+COMMENT ON COLUMN "public"."shots"."tracking_type" IS 'Dropdown from dropdown_options: Tracking, Establishing, Standard, Photos (fixed list, no other)';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."user_clients" (
@@ -1126,41 +1098,6 @@ COMMENT ON VIEW "public"."user_accessible_scripts" IS 'Determines script access 
 
 
 
-ALTER TABLE ONLY "hub"."bathrooms"
-    ADD CONSTRAINT "bathrooms_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "hub"."equipment"
-    ADD CONSTRAINT "equipment_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "hub"."json_schemas"
-    ADD CONSTRAINT "json_schemas_pkey" PRIMARY KEY ("section");
-
-
-
-ALTER TABLE ONLY "hub"."kitchens"
-    ADD CONSTRAINT "kitchens_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "hub"."project_profile"
-    ADD CONSTRAINT "project_profile_pkey" PRIMARY KEY ("project_id");
-
-
-
-ALTER TABLE ONLY "hub"."section_documents"
-    ADD CONSTRAINT "section_documents_pkey" PRIMARY KEY ("project_id", "section");
-
-
-
-ALTER TABLE ONLY "hub"."section_progress"
-    ADD CONSTRAINT "section_progress_pkey" PRIMARY KEY ("project_id", "section");
-
-
-
 ALTER TABLE ONLY "public"."audit_log"
     ADD CONSTRAINT "audit_log_pkey" PRIMARY KEY ("id");
 
@@ -1183,11 +1120,6 @@ ALTER TABLE ONLY "public"."dropdown_options"
 
 ALTER TABLE ONLY "public"."hard_delete_audit_log"
     ADD CONSTRAINT "hard_delete_audit_log_pkey" PRIMARY KEY ("id");
-
-
-
-ALTER TABLE ONLY "public"."production_notes"
-    ADD CONSTRAINT "production_notes_pkey" PRIMARY KEY ("id");
 
 
 
@@ -1221,6 +1153,11 @@ ALTER TABLE ONLY "public"."script_components"
 
 
 
+ALTER TABLE ONLY "public"."script_locks"
+    ADD CONSTRAINT "script_locks_pkey" PRIMARY KEY ("script_id");
+
+
+
 ALTER TABLE ONLY "public"."scripts"
     ADD CONSTRAINT "scripts_pkey" PRIMARY KEY ("id");
 
@@ -1231,9 +1168,10 @@ ALTER TABLE ONLY "public"."scripts"
 
 
 
--- Note: PRIMARY KEY constraint already defined in CREATE TABLE at line 1066
--- Removing duplicate ALTER TABLE ADD CONSTRAINT shots_pkey to prevent error:
--- "multiple primary keys for table shots are not allowed"
+ALTER TABLE ONLY "public"."shots"
+    ADD CONSTRAINT "shots_pkey" PRIMARY KEY ("id");
+
+
 
 ALTER TABLE ONLY "public"."shots"
     ADD CONSTRAINT "shots_scene_id_shot_number_key" UNIQUE ("scene_id", "shot_number");
@@ -1257,26 +1195,6 @@ ALTER TABLE ONLY "public"."user_profiles"
 
 ALTER TABLE ONLY "public"."videos"
     ADD CONSTRAINT "videos_pkey" PRIMARY KEY ("id");
-
-
-
-CREATE INDEX "idx_bathrooms_project_id" ON "hub"."bathrooms" USING "btree" ("project_id");
-
-
-
-CREATE INDEX "idx_equipment_project_id" ON "hub"."equipment" USING "btree" ("project_id");
-
-
-
-CREATE INDEX "idx_equipment_type" ON "hub"."equipment" USING "btree" ("type");
-
-
-
-CREATE INDEX "idx_kitchens_project_id" ON "hub"."kitchens" USING "btree" ("project_id");
-
-
-
-CREATE INDEX "idx_section_documents_data_gin" ON "hub"."section_documents" USING "gin" ("data");
 
 
 
@@ -1336,23 +1254,19 @@ CREATE INDEX "idx_hard_delete_audit_log_operator" ON "public"."hard_delete_audit
 
 
 
-CREATE INDEX "idx_production_notes_author_id" ON "public"."production_notes" USING "btree" ("author_id");
-
-
-
-CREATE INDEX "idx_production_notes_parent_id" ON "public"."production_notes" USING "btree" ("parent_id");
-
-
-
-CREATE INDEX "idx_production_notes_shot_id" ON "public"."production_notes" USING "btree" ("shot_id");
-
-
-
 CREATE INDEX "idx_projects_client_filter" ON "public"."projects" USING "btree" ("client_filter");
 
 
 
 CREATE INDEX "idx_scene_planning_state_script_component_id" ON "public"."scene_planning_state" USING "btree" ("script_component_id");
+
+
+
+CREATE INDEX "idx_script_locks_last_heartbeat" ON "public"."script_locks" USING "btree" ("last_heartbeat");
+
+
+
+CREATE INDEX "idx_script_locks_locked_by" ON "public"."script_locks" USING "btree" ("locked_by");
 
 
 
@@ -1392,31 +1306,7 @@ CREATE INDEX "idx_videos_eav_code" ON "public"."videos" USING "btree" ("eav_code
 
 
 
-CREATE OR REPLACE TRIGGER "tg_moddatetime_bathrooms" BEFORE UPDATE ON "hub"."bathrooms" FOR EACH ROW EXECUTE FUNCTION "public"."moddatetime"('updated_at');
-
-
-
-CREATE OR REPLACE TRIGGER "tg_moddatetime_equipment" BEFORE UPDATE ON "hub"."equipment" FOR EACH ROW EXECUTE FUNCTION "public"."moddatetime"('updated_at');
-
-
-
-CREATE OR REPLACE TRIGGER "tg_moddatetime_json_schemas" BEFORE UPDATE ON "hub"."json_schemas" FOR EACH ROW EXECUTE FUNCTION "public"."moddatetime"('updated_at');
-
-
-
-CREATE OR REPLACE TRIGGER "tg_moddatetime_kitchens" BEFORE UPDATE ON "hub"."kitchens" FOR EACH ROW EXECUTE FUNCTION "public"."moddatetime"('updated_at');
-
-
-
-CREATE OR REPLACE TRIGGER "tg_moddatetime_project_profile" BEFORE UPDATE ON "hub"."project_profile" FOR EACH ROW EXECUTE FUNCTION "public"."moddatetime"('updated_at');
-
-
-
-CREATE OR REPLACE TRIGGER "tg_moddatetime_section_documents" BEFORE UPDATE ON "hub"."section_documents" FOR EACH ROW EXECUTE FUNCTION "public"."moddatetime"('updated_at');
-
-
-
-CREATE OR REPLACE TRIGGER "tg_moddatetime_section_progress" BEFORE UPDATE ON "hub"."section_progress" FOR EACH ROW EXECUTE FUNCTION "public"."moddatetime"('updated_at');
+CREATE INDEX "shots_owner_user_id_idx" ON "public"."shots" USING "btree" ("owner_user_id");
 
 
 
@@ -1449,36 +1339,6 @@ CREATE OR REPLACE TRIGGER "update_comments_updated_at" BEFORE UPDATE ON "public"
 
 
 CREATE OR REPLACE TRIGGER "update_scripts_updated_at" BEFORE UPDATE ON "public"."scripts" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
-
-
-
-ALTER TABLE ONLY "hub"."bathrooms"
-    ADD CONSTRAINT "bathrooms_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "hub"."equipment"
-    ADD CONSTRAINT "equipment_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "hub"."kitchens"
-    ADD CONSTRAINT "kitchens_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "hub"."project_profile"
-    ADD CONSTRAINT "project_profile_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "hub"."section_documents"
-    ADD CONSTRAINT "section_documents_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "hub"."section_progress"
-    ADD CONSTRAINT "section_progress_project_id_fkey" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE CASCADE;
 
 
 
@@ -1516,21 +1376,6 @@ ALTER TABLE ONLY "public"."hard_delete_audit_log"
 
 
 
-ALTER TABLE ONLY "public"."production_notes"
-    ADD CONSTRAINT "production_notes_author_id_fkey" FOREIGN KEY ("author_id") REFERENCES "public"."user_profiles"("id") ON DELETE SET NULL;
-
-
-
-ALTER TABLE ONLY "public"."production_notes"
-    ADD CONSTRAINT "production_notes_parent_id_fkey" FOREIGN KEY ("parent_id") REFERENCES "public"."production_notes"("id") ON DELETE CASCADE;
-
-
-
-ALTER TABLE ONLY "public"."production_notes"
-    ADD CONSTRAINT "production_notes_shot_id_fkey" FOREIGN KEY ("shot_id") REFERENCES "public"."shots"("id") ON DELETE CASCADE;
-
-
-
 ALTER TABLE ONLY "public"."scene_planning_state"
     ADD CONSTRAINT "scene_planning_state_script_component_id_fkey" FOREIGN KEY ("script_component_id") REFERENCES "public"."script_components"("id") ON DELETE CASCADE;
 
@@ -1541,17 +1386,29 @@ ALTER TABLE ONLY "public"."script_components"
 
 
 
+ALTER TABLE ONLY "public"."script_locks"
+    ADD CONSTRAINT "script_locks_locked_by_fkey" FOREIGN KEY ("locked_by") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."script_locks"
+    ADD CONSTRAINT "script_locks_script_id_fkey" FOREIGN KEY ("script_id") REFERENCES "public"."scripts"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."scripts"
     ADD CONSTRAINT "scripts_video_id_fkey" FOREIGN KEY ("video_id") REFERENCES "public"."videos"("id") ON DELETE CASCADE;
 
 
 
 ALTER TABLE ONLY "public"."shots"
-    ADD CONSTRAINT "shots_scene_id_fkey" FOREIGN KEY ("scene_id") REFERENCES "public"."scene_planning_state"("id") ON DELETE CASCADE;
+    ADD CONSTRAINT "shots_owner_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."users"("id") ON DELETE SET NULL;
+
 
 
 ALTER TABLE ONLY "public"."shots"
-    ADD CONSTRAINT "shots_owner_user_id_fkey" FOREIGN KEY ("owner_user_id") REFERENCES "auth"."users"("id");
+    ADD CONSTRAINT "shots_scene_id_fkey" FOREIGN KEY ("scene_id") REFERENCES "public"."scene_planning_state"("id") ON DELETE CASCADE;
+
 
 
 ALTER TABLE ONLY "public"."user_clients"
@@ -1574,79 +1431,27 @@ ALTER TABLE ONLY "public"."videos"
 
 
 
-ALTER TABLE "hub"."bathrooms" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "hub"."equipment" ENABLE ROW LEVEL SECURITY;
-
-
-CREATE POLICY "hub_bathrooms_rw_admin_employee" ON "hub"."bathrooms" TO "authenticated" USING ("hub"."is_admin_or_employee"()) WITH CHECK ("hub"."is_admin_or_employee"());
+CREATE POLICY "Lock holder can update heartbeat" ON "public"."script_locks" FOR UPDATE USING (("auth"."uid"() = "locked_by"));
 
 
 
-CREATE POLICY "hub_bathrooms_rw_clients" ON "hub"."bathrooms" TO "authenticated" USING ("hub"."is_client_of_project"("project_id")) WITH CHECK ("hub"."is_client_of_project"("project_id"));
+CREATE POLICY "Lock holder or admin can release" ON "public"."script_locks" FOR DELETE USING ((("auth"."uid"() = "locked_by") OR (EXISTS ( SELECT 1
+   FROM "public"."user_profiles" "up"
+  WHERE (("up"."id" = "auth"."uid"()) AND ("up"."role" = 'admin'::"text"))))));
 
 
 
-CREATE POLICY "hub_equipment_rw_admin_employee" ON "hub"."equipment" TO "authenticated" USING ("hub"."is_admin_or_employee"()) WITH CHECK ("hub"."is_admin_or_employee"());
+CREATE POLICY "Users can acquire available locks" ON "public"."script_locks" FOR INSERT WITH CHECK ((("auth"."uid"() = "locked_by") AND (EXISTS ( SELECT 1
+   FROM "public"."user_accessible_scripts" "uas"
+  WHERE (("uas"."script_id" = "script_locks"."script_id") AND ("uas"."user_id" = "auth"."uid"()))))));
 
 
 
-CREATE POLICY "hub_equipment_rw_clients" ON "hub"."equipment" TO "authenticated" USING ("hub"."is_client_of_project"("project_id")) WITH CHECK ("hub"."is_client_of_project"("project_id"));
+CREATE POLICY "Users can view all locks" ON "public"."script_locks" FOR SELECT USING (true);
 
-
-
-CREATE POLICY "hub_kitchens_rw_admin_employee" ON "hub"."kitchens" TO "authenticated" USING ("hub"."is_admin_or_employee"()) WITH CHECK ("hub"."is_admin_or_employee"());
-
-
-
-CREATE POLICY "hub_kitchens_rw_clients" ON "hub"."kitchens" TO "authenticated" USING ("hub"."is_client_of_project"("project_id")) WITH CHECK ("hub"."is_client_of_project"("project_id"));
-
-
-
-CREATE POLICY "hub_project_profile_rw_admin_employee" ON "hub"."project_profile" TO "authenticated" USING ("hub"."is_admin_or_employee"()) WITH CHECK ("hub"."is_admin_or_employee"());
-
-
-
-CREATE POLICY "hub_project_profile_rw_clients" ON "hub"."project_profile" TO "authenticated" USING ("hub"."is_client_of_project"("project_id")) WITH CHECK ("hub"."is_client_of_project"("project_id"));
-
-
-
-CREATE POLICY "hub_section_documents_rw_admin_employee" ON "hub"."section_documents" TO "authenticated" USING ("hub"."is_admin_or_employee"()) WITH CHECK ("hub"."is_admin_or_employee"());
-
-
-
-CREATE POLICY "hub_section_documents_rw_clients" ON "hub"."section_documents" TO "authenticated" USING ("hub"."is_client_of_project"("project_id")) WITH CHECK ("hub"."is_client_of_project"("project_id"));
-
-
-
-CREATE POLICY "hub_section_progress_rw_admin_employee" ON "hub"."section_progress" TO "authenticated" USING ("hub"."is_admin_or_employee"()) WITH CHECK ("hub"."is_admin_or_employee"());
-
-
-
-CREATE POLICY "hub_section_progress_rw_clients" ON "hub"."section_progress" TO "authenticated" USING ("hub"."is_client_of_project"("project_id")) WITH CHECK ("hub"."is_client_of_project"("project_id"));
-
-
-
-ALTER TABLE "hub"."kitchens" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "hub"."project_profile" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "hub"."section_documents" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "hub"."section_progress" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "admin_all_dropdown_options" ON "public"."dropdown_options" USING ((EXISTS ( SELECT 1
-   FROM "public"."user_profiles"
-  WHERE (("user_profiles"."id" = "auth"."uid"()) AND ("user_profiles"."role" = 'admin'::"text")))));
-
-
-
-CREATE POLICY "admin_all_production_notes" ON "public"."production_notes" USING ((EXISTS ( SELECT 1
    FROM "public"."user_profiles"
   WHERE (("user_profiles"."id" = "auth"."uid"()) AND ("user_profiles"."role" = 'admin'::"text")))));
 
@@ -1680,18 +1485,6 @@ CREATE POLICY "audit_log_admin_read" ON "public"."audit_log" FOR SELECT TO "auth
 
 
 CREATE POLICY "client_select_dropdown_options" ON "public"."dropdown_options" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "client_select_production_notes" ON "public"."production_notes" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM (((("public"."shots" "sh"
-     JOIN "public"."scene_planning_state" "sp" ON (("sh"."scene_id" = "sp"."id")))
-     JOIN "public"."script_components" "sc" ON (("sp"."script_component_id" = "sc"."id")))
-     JOIN "public"."scripts" "s" ON (("sc"."script_id" = "s"."id")))
-     JOIN "public"."videos" "v" ON (("s"."video_id" = "v"."id")))
-  WHERE (("sh"."id" = "production_notes"."shot_id") AND ("v"."eav_code" IN ( SELECT DISTINCT "user_clients"."client_filter"
-           FROM "public"."user_clients"
-          WHERE ("user_clients"."user_id" = "auth"."uid"())))))));
 
 
 
@@ -1757,10 +1550,31 @@ CREATE POLICY "components_select_unified" ON "public"."script_components" FOR SE
 ALTER TABLE "public"."dropdown_options" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "employee_all_scene_planning_state" ON "public"."scene_planning_state" USING ((EXISTS ( SELECT 1
+   FROM "public"."user_profiles"
+  WHERE (("user_profiles"."id" = "auth"."uid"()) AND ("user_profiles"."role" = 'employee'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."user_profiles"
+  WHERE (("user_profiles"."id" = "auth"."uid"()) AND ("user_profiles"."role" = 'employee'::"text")))));
+
+
+
+COMMENT ON POLICY "employee_all_scene_planning_state" ON "public"."scene_planning_state" IS 'Employees have full access to scene_planning_state for scene planning workflow';
+
+
+
+CREATE POLICY "employee_all_shots" ON "public"."shots" USING ((EXISTS ( SELECT 1
+   FROM "public"."user_profiles"
+  WHERE (("user_profiles"."id" = "auth"."uid"()) AND ("user_profiles"."role" = 'employee'::"text"))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."user_profiles"
+  WHERE (("user_profiles"."id" = "auth"."uid"()) AND ("user_profiles"."role" = 'employee'::"text")))));
+
+
+
+COMMENT ON POLICY "employee_all_shots" ON "public"."shots" IS 'Employees have full access to shots for scene planning workflow';
+
+
+
 ALTER TABLE "public"."hard_delete_audit_log" ENABLE ROW LEVEL SECURITY;
-
-
-ALTER TABLE "public"."production_notes" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "profiles_admin_read_all" ON "public"."user_profiles" FOR SELECT TO "authenticated" USING (("public"."get_user_role"() = 'admin'::"text"));
@@ -1805,6 +1619,9 @@ ALTER TABLE "public"."scene_planning_state" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."script_components" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."script_locks" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."scripts" ENABLE ROW LEVEL SECURITY;
 
 
@@ -1845,26 +1662,6 @@ CREATE POLICY "videos_select_unified" ON "public"."videos" FOR SELECT TO "authen
 
 
 
-
-
-ALTER PUBLICATION "supabase_realtime" OWNER TO "postgres";
-
-
-
-
-
-
-ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."comments";
-
-
-
-ALTER PUBLICATION "supabase_realtime" ADD TABLE ONLY "public"."scripts";
-
-
-
-
-
-
 GRANT USAGE ON SCHEMA "public" TO "postgres";
 GRANT USAGE ON SCHEMA "public" TO "anon";
 GRANT USAGE ON SCHEMA "public" TO "authenticated";
@@ -1872,202 +1669,9 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."citextin"("cstring") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citextin"("cstring") TO "anon";
-GRANT ALL ON FUNCTION "public"."citextin"("cstring") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citextin"("cstring") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citextout"("public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citextout"("public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citextout"("public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citextout"("public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citextrecv"("internal") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citextrecv"("internal") TO "anon";
-GRANT ALL ON FUNCTION "public"."citextrecv"("internal") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citextrecv"("internal") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citextsend"("public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citextsend"("public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citextsend"("public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citextsend"("public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext"(boolean) TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext"(boolean) TO "anon";
-GRANT ALL ON FUNCTION "public"."citext"(boolean) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext"(boolean) TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext"(character) TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext"(character) TO "anon";
-GRANT ALL ON FUNCTION "public"."citext"(character) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext"(character) TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext"("inet") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext"("inet") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext"("inet") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext"("inet") TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+GRANT ALL ON FUNCTION "public"."acquire_script_lock"("p_script_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."acquire_script_lock"("p_script_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."acquire_script_lock"("p_script_id" "uuid") TO "service_role";
 
 
 
@@ -2089,115 +1693,9 @@ GRANT ALL ON FUNCTION "public"."check_client_access"() TO "service_role";
 
 
 
-GRANT ALL ON FUNCTION "public"."citext_cmp"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_cmp"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_cmp"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_cmp"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_eq"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_eq"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_eq"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_eq"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_ge"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_ge"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_ge"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_ge"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_gt"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_gt"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_gt"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_gt"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_hash"("public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_hash"("public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_hash"("public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_hash"("public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_hash_extended"("public"."citext", bigint) TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_hash_extended"("public"."citext", bigint) TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_hash_extended"("public"."citext", bigint) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_hash_extended"("public"."citext", bigint) TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_larger"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_larger"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_larger"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_larger"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_le"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_le"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_le"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_le"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_lt"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_lt"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_lt"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_lt"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_ne"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_ne"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_ne"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_ne"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_pattern_cmp"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_pattern_cmp"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_pattern_cmp"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_pattern_cmp"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_pattern_ge"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_pattern_ge"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_pattern_ge"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_pattern_ge"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_pattern_gt"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_pattern_gt"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_pattern_gt"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_pattern_gt"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_pattern_le"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_pattern_le"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_pattern_le"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_pattern_le"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_pattern_lt"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_pattern_lt"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_pattern_lt"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_pattern_lt"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."citext_smaller"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."citext_smaller"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."citext_smaller"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."citext_smaller"("public"."citext", "public"."citext") TO "service_role";
+GRANT ALL ON FUNCTION "public"."cleanup_expired_locks"() TO "anon";
+GRANT ALL ON FUNCTION "public"."cleanup_expired_locks"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."cleanup_expired_locks"() TO "service_role";
 
 
 
@@ -2243,121 +1741,9 @@ GRANT ALL ON FUNCTION "public"."hard_delete_comment_tree"("p_comment_id" "uuid",
 
 
 
-GRANT ALL ON FUNCTION "public"."json_matches_schema"("schema" json, "instance" json) TO "postgres";
-GRANT ALL ON FUNCTION "public"."json_matches_schema"("schema" json, "instance" json) TO "anon";
-GRANT ALL ON FUNCTION "public"."json_matches_schema"("schema" json, "instance" json) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."json_matches_schema"("schema" json, "instance" json) TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."jsonb_matches_schema"("schema" json, "instance" "jsonb") TO "postgres";
-GRANT ALL ON FUNCTION "public"."jsonb_matches_schema"("schema" json, "instance" "jsonb") TO "anon";
-GRANT ALL ON FUNCTION "public"."jsonb_matches_schema"("schema" json, "instance" "jsonb") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."jsonb_matches_schema"("schema" json, "instance" "jsonb") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."jsonschema_is_valid"("schema" json) TO "postgres";
-GRANT ALL ON FUNCTION "public"."jsonschema_is_valid"("schema" json) TO "anon";
-GRANT ALL ON FUNCTION "public"."jsonschema_is_valid"("schema" json) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."jsonschema_is_valid"("schema" json) TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."jsonschema_validation_errors"("schema" json, "instance" json) TO "postgres";
-GRANT ALL ON FUNCTION "public"."jsonschema_validation_errors"("schema" json, "instance" json) TO "anon";
-GRANT ALL ON FUNCTION "public"."jsonschema_validation_errors"("schema" json, "instance" json) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."jsonschema_validation_errors"("schema" json, "instance" json) TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."moddatetime"() TO "postgres";
-GRANT ALL ON FUNCTION "public"."moddatetime"() TO "anon";
-GRANT ALL ON FUNCTION "public"."moddatetime"() TO "authenticated";
-GRANT ALL ON FUNCTION "public"."moddatetime"() TO "service_role";
-
-
-
 GRANT ALL ON FUNCTION "public"."refresh_user_accessible_scripts"() TO "anon";
 GRANT ALL ON FUNCTION "public"."refresh_user_accessible_scripts"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."refresh_user_accessible_scripts"() TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_match"("public"."citext", "public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_matches"("public"."citext", "public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_replace"("public"."citext", "public"."citext", "text", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_array"("public"."citext", "public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."regexp_split_to_table"("public"."citext", "public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."replace"("public"."citext", "public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."replace"("public"."citext", "public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."replace"("public"."citext", "public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."replace"("public"."citext", "public"."citext", "public"."citext") TO "service_role";
 
 
 
@@ -2370,83 +1756,6 @@ GRANT ALL ON TABLE "public"."scripts" TO "service_role";
 GRANT ALL ON FUNCTION "public"."save_script_with_components"("p_script_id" "uuid", "p_yjs_state" "text", "p_plain_text" "text", "p_components" "jsonb") TO "anon";
 GRANT ALL ON FUNCTION "public"."save_script_with_components"("p_script_id" "uuid", "p_yjs_state" "text", "p_plain_text" "text", "p_components" "jsonb") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."save_script_with_components"("p_script_id" "uuid", "p_yjs_state" "text", "p_plain_text" "text", "p_components" "jsonb") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."split_part"("public"."citext", "public"."citext", integer) TO "postgres";
-GRANT ALL ON FUNCTION "public"."split_part"("public"."citext", "public"."citext", integer) TO "anon";
-GRANT ALL ON FUNCTION "public"."split_part"("public"."citext", "public"."citext", integer) TO "authenticated";
-GRANT ALL ON FUNCTION "public"."split_part"("public"."citext", "public"."citext", integer) TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."strpos"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."strpos"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."strpos"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."strpos"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticlike"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticnlike"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticregexeq"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "text") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."texticregexne"("public"."citext", "public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."translate"("public"."citext", "public"."citext", "text") TO "postgres";
-GRANT ALL ON FUNCTION "public"."translate"("public"."citext", "public"."citext", "text") TO "anon";
-GRANT ALL ON FUNCTION "public"."translate"("public"."citext", "public"."citext", "text") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."translate"("public"."citext", "public"."citext", "text") TO "service_role";
 
 
 
@@ -2465,35 +1774,6 @@ GRANT ALL ON FUNCTION "public"."update_script_status"("p_script_id" "uuid", "p_n
 GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "anon";
 GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "service_role";
-
-
-
-
-
-
-
-
-
-
-
-
-GRANT ALL ON FUNCTION "public"."max"("public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."max"("public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."max"("public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."max"("public"."citext") TO "service_role";
-
-
-
-GRANT ALL ON FUNCTION "public"."min"("public"."citext") TO "postgres";
-GRANT ALL ON FUNCTION "public"."min"("public"."citext") TO "anon";
-GRANT ALL ON FUNCTION "public"."min"("public"."citext") TO "authenticated";
-GRANT ALL ON FUNCTION "public"."min"("public"."citext") TO "service_role";
-
-
-
-
-
-
 
 
 
@@ -2527,12 +1807,6 @@ GRANT ALL ON TABLE "public"."hard_delete_audit_log" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."production_notes" TO "anon";
-GRANT ALL ON TABLE "public"."production_notes" TO "authenticated";
-GRANT ALL ON TABLE "public"."production_notes" TO "service_role";
-
-
-
 GRANT ALL ON TABLE "public"."scene_planning_state" TO "anon";
 GRANT ALL ON TABLE "public"."scene_planning_state" TO "authenticated";
 GRANT ALL ON TABLE "public"."scene_planning_state" TO "service_role";
@@ -2542,6 +1816,12 @@ GRANT ALL ON TABLE "public"."scene_planning_state" TO "service_role";
 GRANT ALL ON TABLE "public"."script_components" TO "anon";
 GRANT ALL ON TABLE "public"."script_components" TO "authenticated";
 GRANT ALL ON TABLE "public"."script_components" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."script_locks" TO "anon";
+GRANT ALL ON TABLE "public"."script_locks" TO "authenticated";
+GRANT ALL ON TABLE "public"."script_locks" TO "service_role";
 
 
 
@@ -2581,12 +1861,6 @@ GRANT ALL ON TABLE "public"."user_accessible_scripts" TO "service_role";
 
 
 
-
-
-
-
-
-
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "postgres";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "anon";
 ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON SEQUENCES TO "authenticated";
@@ -2618,53 +1892,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "postgres" IN SCHEMA "public" GRANT ALL ON TAB
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 RESET ALL;
-CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION ensure_user_profile_on_signup();
-
-
-  create policy "comments_channel_read"
-  on "realtime"."messages"
-  as permissive
-  for select
-  to authenticated
-using (((topic ~~ 'room:%:comments'::text) AND (EXISTS ( SELECT 1
-   FROM user_accessible_scripts uas
-  WHERE ((uas.user_id = auth.uid()) AND ((uas.script_id)::text = split_part(messages.topic, ':'::text, 2)))))));
-
-
-
-  create policy "comments_channel_write"
-  on "realtime"."messages"
-  as permissive
-  for insert
-  to authenticated
-with check (((topic ~~ 'room:%:comments'::text) AND (EXISTS ( SELECT 1
-   FROM user_accessible_scripts uas
-  WHERE ((uas.user_id = auth.uid()) AND ((uas.script_id)::text = split_part(messages.topic, ':'::text, 2)))))));
-
-
-
