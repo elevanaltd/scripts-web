@@ -83,10 +83,11 @@ describe('useScriptLock (integration)', () => {
     // First user acquires lock
     const { unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
 
+    // Wait for first user's lock to be created
     await waitFor(
-      () => {
-        const { data } = testSupabase.from('script_locks').select('*').eq('script_id', TEST_SCRIPT_ID)
-        return data
+      async () => {
+        const { data } = await testSupabase.from('script_locks').select('*').eq('script_id', TEST_SCRIPT_ID).maybeSingle()
+        expect(data).toBeTruthy()
       },
       { timeout: 10000 }
     )
@@ -265,8 +266,7 @@ describe('useScriptLock (integration)', () => {
 
     await testSupabase.from('script_locks').insert({
       script_id: TEST_SCRIPT_ID,
-      locked_by_id: clientUserId,
-      locked_by_name: 'Test Client',
+      locked_by: clientUserId,
       last_heartbeat: new Date().toISOString(),
     })
 
@@ -289,8 +289,7 @@ describe('useScriptLock (integration)', () => {
 
     await testSupabase.from('script_locks').insert({
       script_id: TEST_SCRIPT_ID,
-      locked_by_id: clientUserId,
-      locked_by_name: 'Test Client',
+      locked_by: clientUserId,
       last_heartbeat: new Date().toISOString(),
     })
 
@@ -329,8 +328,7 @@ describe('useScriptLock (integration)', () => {
 
     await testSupabase.from('script_locks').insert({
       script_id: TEST_SCRIPT_ID,
-      locked_by_id: clientUserId,
-      locked_by_name: 'Test Client',
+      locked_by: clientUserId,
       last_heartbeat: new Date().toISOString(),
     })
 

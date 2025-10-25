@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { RealtimeChannel } from '@supabase/supabase-js'
+import { acquireScriptLock, scriptLocksTable } from '../lib/supabaseHelpers'
 
 // Export interface for type safety
 export interface ScriptLockStatus {
@@ -22,7 +23,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
 
   // Track acquisition state to prevent race conditions
   const isAcquiringRef = useRef(false)
-  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
 
   // Auto-lock on mount
@@ -33,9 +34,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     setLockStatus('checking')
 
     try {
-      const { data, error } = await supabase.rpc('acquire_script_lock', {
-        p_script_id: scriptId,
-      })
+      const { data, error } = await acquireScriptLock(scriptId)
 
       if (error) {
         console.error('Lock acquisition error:', error)
@@ -44,12 +43,13 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
         return
       }
 
-      if (data?.success) {
+      const lockResult = data?.[0]
+      if (lockResult?.success) {
         setLockStatus('acquired')
-        setLockedBy({ id: data.locked_by_id, name: data.locked_by_name })
-      } else {
+        setLockedBy({ id: lockResult.locked_by_user_id, name: lockResult.locked_by_name })
+      } else if (lockResult) {
         setLockStatus('locked')
-        setLockedBy({ id: data?.locked_by_id || '', name: data?.locked_by_name || 'Unknown' })
+        setLockedBy({ id: lockResult.locked_by_user_id || '', name: lockResult.locked_by_name || 'Unknown' })
       }
     } catch (err) {
       console.error('Lock acquisition failed:', err)
@@ -64,8 +64,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     if (!scriptId || lockStatus !== 'acquired') return
 
     try {
-      const { error } = await supabase
-        .from('script_locks')
+      const { error} = await scriptLocksTable()
         .update({ last_heartbeat: new Date().toISOString() })
         .eq('script_id', scriptId)
 
@@ -87,7 +86,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     if (!scriptId) return
 
     try {
-      await supabase.from('script_locks').delete().eq('script_id', scriptId)
+      await scriptLocksTable().delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
     } catch (err) {
@@ -108,7 +107,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     if (!scriptId) return
 
     try {
-      await supabase.from('script_locks').delete().eq('script_id', scriptId)
+      await scriptLocksTable().delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
     } catch (err) {
@@ -125,7 +124,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     // Cleanup on unmount
     return () => {
       if (scriptId && lockStatus === 'acquired') {
-        supabase.from('script_locks').delete().eq('script_id', scriptId)
+        scriptLocksTable().delete().eq('script_id', scriptId)
       }
 
       // Clear heartbeat interval
@@ -138,7 +137,8 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
         supabase.removeChannel(channelRef.current)
       }
     }
-  }, [scriptId]) // Only depend on scriptId to prevent re-acquisition loops
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scriptId]) // Only depend on scriptId to prevent re-acquisition loops (acquireLock intentionally excluded)
 
   // Heartbeat interval: Start after lock acquired
   useEffect(() => {
@@ -177,6 +177,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
         },
         (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
             setLockStatus('locked')
             setLockedBy({ id: newLock.locked_by_id, name: newLock.locked_by_name })
