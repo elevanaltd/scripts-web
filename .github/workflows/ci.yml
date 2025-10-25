@@ -217,3 +217,116 @@ jobs:
           name: build-dist
           path: dist/
           retention-days: 7
+
+  # ============================================================================
+  # TIER 2: PREVIEW INTEGRATION TESTS
+  # ============================================================================
+  # Protocol: SUPABASE_PREVIEW_TESTING (v1.0.0)
+  # Purpose: Full integration tests against Supabase Preview Branch
+  # Pattern: Wait for preview ready → test with Auth Admin API → full E2E
+  #
+  # Preview branch provides:
+  # - Full Auth system (operational, production-like)
+  # - Isolated database with RLS policies
+  # - Separate API URL/keys per PR
+  # - Auto-destroyed on PR merge/close
+  # ============================================================================
+
+  preview-integration-tests:
+    name: Preview Branch Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: quality-gates
+    permissions:
+      contents: read
+
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Wait for Supabase Preview to be ready
+        uses: fountainhead/action-wait-for-check@v1.2.0
+        id: wait-for-preview
+        with:
+          checkName: 'Supabase Preview'
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          timeoutSeconds: 600
+          intervalSeconds: 10
+
+      - name: Fail if Preview deployment failed
+        if: steps.wait-for-preview.outputs.conclusion != 'success'
+        run: |
+          echo "❌ Supabase Preview deployment failed or timed out"
+          echo "Status: ${{ steps.wait-for-preview.outputs.conclusion }}"
+          exit 1
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Export Preview Branch environment variables
+        run: |
+          # Login with access token
+          echo "$SUPABASE_ACCESS_TOKEN" | supabase login --token -
+
+          # Get preview branch environment for current PR
+          # This exports: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.
+          supabase --experimental branches get "${{ github.head_ref }}" -o env >> $GITHUB_ENV
+
+          echo "✅ Preview environment variables exported"
+          echo "Preview URL: ${{ env.SUPABASE_URL }}"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://npm.pkg.github.com/'
+          scope: '@elevanaltd'
+          always-auth: true
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: npm ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure app for Preview Branch
+        run: |
+          echo "VITE_SUPABASE_URL=${{ env.SUPABASE_URL }}" >> $GITHUB_ENV
+          echo "VITE_SUPABASE_PUBLISHABLE_KEY=${{ env.SUPABASE_ANON_KEY }}" >> $GITHUB_ENV
+
+          echo "✅ App configured for preview environment"
+
+      - name: Create test users in Preview via Auth Admin API
+        run: |
+          # Preview has baseline seed.sql already applied (runs once at creation)
+          # Now create test users via Auth Admin API (per-run data)
+
+          export VITE_SUPABASE_URL=${{ env.SUPABASE_URL }}
+          export SUPABASE_SERVICE_ROLE_KEY=${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+
+          node scripts/create-test-users-via-api.mjs
+
+          echo "✅ Test users created in preview environment"
+
+      - name: Run integration tests against Preview
+        run: npm run test:integration -- --run
+        env:
+          VITE_SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-test-results
+          path: coverage/
+          retention-days: 7

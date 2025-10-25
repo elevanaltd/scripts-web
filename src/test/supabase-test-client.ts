@@ -25,7 +25,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import type { Database } from '@elevanaltd/shared-lib/types'
+import type { Database } from '../types/database.types'
 
 // Environment-aware Supabase URL
 // Priority: Preview branch (CI) > Local (dev) > Remote (fallback)

@@ -55,6 +55,7 @@ for (const user of users) {
 console.log('\n👥 Creating test users via Auth API...');
 let successCount = 0;
 let failCount = 0;
+const createdUsers = []; // Track created users for user_clients
 
 for (const user of users) {
   console.log(`\n   📝 ${user.email} (${user.role})...`);
@@ -90,6 +91,34 @@ for (const user of users) {
   } else {
     console.log(`      ✓ User profile created`);
     successCount++;
+    // Track created user for user_clients
+    createdUsers.push({
+      id: data.user.id,
+      email: user.email,
+      role: user.role
+    });
+  }
+}
+
+// Create user_clients for client users (RLS testing)
+console.log('\n🔗 Creating user_clients for RLS testing...');
+const clientUsers = createdUsers.filter(u => u.role === 'client');
+for (const user of clientUsers) {
+  const clientFilter = user.email === 'test-client@external.com'
+    ? 'CLIENT_ALPHA'  // Matches seed.sql project
+    : 'CLIENT_UNAUTHORIZED'; // No matching projects
+
+  const { error: ucError } = await adminClient
+    .from('user_clients')
+    .upsert({
+      user_id: user.id,
+      client_filter: clientFilter
+    });
+
+  if (ucError) {
+    console.error(`      ❌ user_clients failed for ${user.email}: ${ucError.message}`);
+  } else {
+    console.log(`      ✓ Granted ${clientFilter} access to ${user.email}`);
   }
 }
 
