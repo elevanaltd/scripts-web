@@ -35,8 +35,8 @@ const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 });
 
 const users = [
-  { email: 'admin.test@example.com', password: 'test-password-admin-123', role: 'admin', name: 'Test Admin User' },
-  { email: 'client.test@example.com', password: 'test-password-client-123', role: 'client', name: 'Test Client User' },
+  { email: 'test-admin@elevana.com', password: 'test-admin-password-123', role: 'admin', name: 'Test Admin User' },
+  { email: 'test-client@external.com', password: 'test-client-password-123', role: 'client', name: 'Test Client User' },
   { email: 'test-unauthorized@external.com', password: 'test-unauthorized-password-123', role: 'client', name: 'Test Unauthorized User' }
 ];
 
@@ -104,7 +104,7 @@ for (const user of users) {
 console.log('\n🔗 Creating user_clients for RLS testing...');
 const clientUsers = createdUsers.filter(u => u.role === 'client');
 for (const user of clientUsers) {
-  const clientFilter = user.email === 'client.test@example.com'
+  const clientFilter = user.email === 'test-client@external.com'
     ? 'CLIENT_ALPHA'  // Matches seed.sql project
     : 'CLIENT_UNAUTHORIZED'; // No matching projects
 

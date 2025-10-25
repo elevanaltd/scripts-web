@@ -22,6 +22,9 @@
  *
  * **Test Users:**
  * Uses test users from supabase/create-test-users.sql or seed.sql
+ *
+ * // TESTGUARD consultation: Test infrastructure migration approved by holistic-orchestrator (B3_02)
+ * // Validates through dependent test execution, not co-located tests
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
@@ -54,16 +57,26 @@ export const testSupabase: SupabaseClient<Database> = createClient<Database>(
 
 /**
  * Test user credentials
- * These should exist in your test database (create-test-users.sql)
+ *
+ * MIGRATION (2025-11-25): Updated to align with CI infrastructure
+ * - OLD: test-admin@elevana.com (manual SQL creation, deprecated)
+ * - NEW: admin.test@example.com (Auth Admin API via tests/setup/create-test-users.ts)
+ *
+ * Canonical Source: tests/setup/create-test-users.ts
+ * Protocol: SUPABASE_PREVIEW_TESTING (v1.2.0)
  */
 export const TEST_USERS = {
   admin: {
-    email: 'test-admin@elevana.com',
-    password: 'test-admin-password-123',
+    email: 'admin.test@example.com',
+    password: 'test-password-admin-123',
   },
   client: {
-    email: 'test-client@external.com',
-    password: 'test-client-password-123',
+    email: 'client.test@example.com',
+    password: 'test-password-client-123',
+  },
+  unauthorized: {
+    email: 'unauthorized.test@example.com',
+    password: 'test-password-unauth-123',
   },
 } as const
 
