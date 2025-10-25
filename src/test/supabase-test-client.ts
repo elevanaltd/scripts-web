@@ -17,7 +17,7 @@
  *
  * **Local Development:**
  * - Run `supabase start` to spin up local instance
- * - Tests use localhost:54321 automatically
+ * - Tests use 127.0.0.1:54321 automatically (undici localhost fix)
  * - Fast iteration without network latency
  *
  * **Test Users:**
@@ -32,11 +32,13 @@ import type { Database } from '../types/database.types'
 
 // Environment-aware Supabase URL
 // Priority: Preview branch (CI) > Local (dev) > Remote (fallback)
+// NOTE: Use 127.0.0.1 instead of localhost to avoid Node.js v22 + undici@5.29.0 fetch failures
+// See: https://github.com/nodejs/undici/issues/2219
 const SUPABASE_URL =
   process.env.SUPABASE_PREVIEW_URL || // CI: Preview branch
-  (typeof window === 'undefined' ? 'http://localhost:54321' : undefined) || // Local: localhost
+  (typeof window === 'undefined' ? 'http://127.0.0.1:54321' : undefined) || // Local: 127.0.0.1 (undici fix)
   import.meta.env.VITE_SUPABASE_URL || // Fallback: Remote
-  'http://localhost:54321' // Ultimate fallback
+  'http://127.0.0.1:54321' // Ultimate fallback (undici fix)
 
 // Environment-aware anon key
 // For local development, use the key from `supabase status`
@@ -142,7 +144,7 @@ export function logTestEnvironment() {
   console.log('Test Environment:', {
     url: SUPABASE_URL,
     isPreviewBranch: !!process.env.SUPABASE_PREVIEW_URL,
-    isLocal: SUPABASE_URL.includes('localhost'),
-    isRemote: !SUPABASE_URL.includes('localhost') && !process.env.SUPABASE_PREVIEW_URL,
+    isLocal: SUPABASE_URL.includes('127.0.0.1') || SUPABASE_URL.includes('localhost'),
+    isRemote: !SUPABASE_URL.includes('127.0.0.1') && !SUPABASE_URL.includes('localhost') && !process.env.SUPABASE_PREVIEW_URL,
   })
 }
