@@ -364,3 +364,85 @@ See TEST-ARCHITECTURE-AUDIT.md → Phase 3 section
 ---
 
 **Status:** Ready for next session. All context preserved. Clear path forward identified.
+
+---
+
+## MIGRATION NOTICE (2025-11-25)
+
+### Test Infrastructure Credential Migration
+
+**CONTEXT:** CI infrastructure upgrade to Auth Admin API pattern
+
+**CHANGES:**
+- OLD Credentials: test-admin@elevana.com, test-client@external.com
+- NEW Credentials: admin.test@example.com, client.test@example.com, unauthorized.test@example.com
+
+**RATIONALE:**
+1. **CI Infrastructure Evolution:** Preview branches use Auth Admin API (tests/setup/create-test-users.ts)
+2. **System Integrity:** Auth Admin API maintains auth.users + auth.identities (SQL inserts bypass identities table)
+3. **Environmental Parity:** Local and CI now use identical credential patterns
+4. **Protocol Compliance:** SUPABASE_PREVIEW_TESTING (v1.2.0)
+
+**CANONICAL SOURCE:**
+- tests/setup/create-test-users.ts (Auth Admin API approach)
+- Not supabase/*.sql files (deprecated for test user creation)
+
+**FILES MIGRATED (19 total):**
+
+1. Core Test Infrastructure:
+   - src/test/supabase-test-client.ts (PRIMARY - TEST_USERS constant)
+   - src/test/auth-helpers.ts
+
+2. Integration Tests:
+   - src/services/scriptService.integration.test.ts
+   - src/lib/rls-security.test.ts
+   - src/lib/hard-delete-governance.test.ts
+
+3. Setup Scripts:
+   - scripts/create-test-users-via-api.mjs
+   - scripts/setup-test-users.{ts,js}
+
+4. Utility Scripts:
+   - scripts/fix-client-policy.js
+   - scripts/fix-test-user-roles.js
+   - scripts/create-client-assignment.js
+   - scripts/check-comments-table.js
+   - scripts/test-comment-creation.js
+   - scripts/test-client-permissions.js
+
+5. Benchmarks:
+   - scripts/benchmarks/write-performance-benchmark.ts
+   - scripts/benchmarks/cascade-delete-benchmark.ts
+
+6. SQL Files (DEPRECATED for user creation):
+   - supabase/test-users-setup.sql (marked deprecated, Auth Admin API preferred)
+   - supabase/create-test-users.sql (marked deprecated, Auth Admin API preferred)
+
+7. Documentation:
+   - docs/003-DOC-TEST-INFRASTRUCTURE-SESSION-SUMMARY.md (this file)
+
+**VALIDATION:**
+```bash
+# No old credentials should remain (except in docs/historical context)
+grep -r "test-admin@elevana" src/ tests/ scripts/ --exclude-dir=node_modules
+# Should return 0 results (or only docs)
+
+# Verify new credentials exist
+grep -r "admin.test@example.com" src/test/ tests/setup/
+# Should show updated files
+```
+
+**IMPACT:**
+- **Local Development:** Must run `node tests/setup/create-test-users.mjs` to create new test users
+- **CI Pipeline:** Preview branches auto-create users via Auth Admin API (no manual setup)
+- **Test Suite:** All 19 files now aligned with CI infrastructure (10 failing tests expected to pass)
+
+**ARCHITECTURAL COHERENCE:**
+- Canonical source established: tests/setup/create-test-users.ts
+- SQL-based user creation deprecated (orphaned auth.identities issue)
+- Auth Admin API pattern enforced for future test user creation
+- Environmental divergence eliminated (local matches CI)
+
+**MIGRATION DATE:** 2025-11-25
+**MIGRATION BY:** error-architect (holistic-orchestrator directive, B3_02 Phase 2/4)
+**VERIFICATION:** All files migrated, Auth Admin API pattern established, SQL files deprecated

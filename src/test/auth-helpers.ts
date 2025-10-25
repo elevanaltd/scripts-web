@@ -21,6 +21,9 @@
  * - Root Cause Analysis: coordination/reports/[ERROR-ARCHITECT-RATE-LIMIT-ANALYSIS]
  * - Strategy Decision: Session Reuse Architecture (Strategy 1)
  * - Pattern: Authenticate → Cache → Reuse → Validate
+ *
+ * // TESTGUARD consultation: Test infrastructure migration approved by holistic-orchestrator (B3_02)
+ * // MIGRATION (2025-11-25): Updated credentials to align with CI Auth Admin API infrastructure
  */
 
 import type { SupabaseClient, Session } from '@supabase/supabase-js'
@@ -29,19 +32,26 @@ import type { Database } from '@elevanaltd/shared-lib/types'
 /**
  * Test User Credentials
  * Standardized across all test files for consistency
+ *
+ * MIGRATION (2025-11-25): Updated to align with CI infrastructure
+ * - OLD: test-admin@elevana.com (manual SQL creation, deprecated)
+ * - NEW: admin.test@example.com (Auth Admin API via tests/setup/create-test-users.ts)
+ *
+ * Canonical Source: tests/setup/create-test-users.ts
+ * Protocol: SUPABASE_PREVIEW_TESTING (v1.2.0)
  */
 export const TEST_USERS = {
   ADMIN: {
-    email: 'test-admin@elevana.com',
-    password: 'test-admin-password-123',
+    email: 'admin.test@example.com',
+    password: 'test-password-admin-123',
   },
   CLIENT: {
-    email: 'test-client@external.com',
-    password: 'test-client-password-123',
+    email: 'client.test@example.com',
+    password: 'test-password-client-123',
   },
   UNAUTHORIZED: {
-    email: 'test-unauthorized@external.com',
-    password: 'test-unauthorized-password-123',
+    email: 'unauthorized.test@example.com',
+    password: 'test-password-unauth-123',
   },
 } as const
 

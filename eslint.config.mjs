@@ -17,6 +17,7 @@ export default [
       '**/node_modules/**',
       '**/*.js',
       '**/useCommentMutations.test.ts', // From .eslintignore
+      '**/.backup-temp/**', // Exclude backup directories from linting
     ],
   },
 
@@ -88,7 +89,7 @@ export default [
 
   // API routes and scripts need Node.js globals (Vercel serverless + utility scripts)
   {
-    files: ['api/**/*.ts', 'scripts/**/*.ts'],
+    files: ['api/**/*.ts', 'scripts/**/*.ts', 'tests/setup/**/*.ts'],
     languageOptions: {
       globals: {
         ...globals.node,
