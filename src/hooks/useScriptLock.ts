@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { RealtimeChannel } from '@supabase/supabase-js'
 import { acquireScriptLock, scriptLocksTable } from '../lib/supabaseHelpers'
+
+// Generic Database type to accept both local and shared-lib Database types
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDatabase = any
 
 // Export interface for type safety
 export interface ScriptLockStatus {
@@ -15,7 +20,21 @@ export interface ScriptLockStatus {
 // Heartbeat interval: 5 minutes
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000
 
-export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
+/**
+ * Hook for managing script edit locks
+ *
+ * @param scriptId - UUID of script to lock
+ * @param client - Supabase client (defaults to production, tests can override with testSupabase)
+ *
+ * **Dependency Injection Pattern:**
+ * - Production: Uses default supabase client (no changes required)
+ * - Tests: Pass testSupabase client configured for localhost
+ * - Architectural coherence: Client is injected, not environment-detected
+ */
+export function useScriptLock(
+  scriptId: string | undefined,
+  client: SupabaseClient<AnyDatabase> = supabase
+): ScriptLockStatus {
   const [lockStatus, setLockStatus] = useState<'acquired' | 'locked' | 'checking' | 'unlocked'>(
     'checking'
   )
@@ -34,7 +53,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     setLockStatus('checking')
 
     try {
-      const { data, error } = await acquireScriptLock(scriptId)
+      const { data, error } = await acquireScriptLock(client, scriptId)
 
       if (error) {
         console.error('Lock acquisition error:', error)
@@ -57,14 +76,14 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     } finally {
       isAcquiringRef.current = false
     }
-  }, [scriptId])
+  }, [scriptId, client])
 
   // Heartbeat: Keep-alive every 5 minutes
   const sendHeartbeat = useCallback(async () => {
     if (!scriptId || lockStatus !== 'acquired') return
 
     try {
-      const { error} = await scriptLocksTable()
+      const { error} = await scriptLocksTable(client)
         .update({ last_heartbeat: new Date().toISOString() })
         .eq('script_id', scriptId)
 
@@ -79,20 +98,20 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
       setLockStatus('checking')
       await acquireLock()
     }
-  }, [scriptId, lockStatus, acquireLock])
+  }, [scriptId, lockStatus, acquireLock, client])
 
   // Lock release (manual unlock)
   const releaseLock = useCallback(async () => {
     if (!scriptId) return
 
     try {
-      await scriptLocksTable().delete().eq('script_id', scriptId)
+      await scriptLocksTable(client).delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
     } catch (err) {
       console.error('Lock release failed:', err)
     }
-  }, [scriptId])
+  }, [scriptId, client])
 
   // Request edit access (sends notification to lock holder)
   const requestEdit = useCallback(async () => {
@@ -107,13 +126,13 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     if (!scriptId) return
 
     try {
-      await scriptLocksTable().delete().eq('script_id', scriptId)
+      await scriptLocksTable(client).delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
     } catch (err) {
       console.error('Force unlock failed:', err)
     }
-  }, [scriptId])
+  }, [scriptId, client])
 
   // Initialize: Acquire lock on mount
   useEffect(() => {
@@ -124,7 +143,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     // Cleanup on unmount
     return () => {
       if (scriptId && lockStatus === 'acquired') {
-        scriptLocksTable().delete().eq('script_id', scriptId)
+        scriptLocksTable(client).delete().eq('script_id', scriptId)
       }
 
       // Clear heartbeat interval
@@ -134,11 +153,11 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
 
       // Unsubscribe from realtime channel
       if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
+        client.removeChannel(channelRef.current)
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scriptId]) // Only depend on scriptId to prevent re-acquisition loops (acquireLock intentionally excluded)
+  }, [scriptId]) // Only depend on scriptId to prevent re-acquisition loops (acquireLock and client intentionally excluded)
 
   // Heartbeat interval: Start after lock acquired
   useEffect(() => {
@@ -165,7 +184,7 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
   useEffect(() => {
     if (!scriptId) return
 
-    const channel = supabase
+    const channel = client
       .channel(`script_locks:${scriptId}`)
       .on(
         'postgres_changes',
@@ -192,9 +211,9 @@ export function useScriptLock(scriptId: string | undefined): ScriptLockStatus {
     channelRef.current = channel
 
     return () => {
-      supabase.removeChannel(channel)
+      client.removeChannel(channel)
     }
-  }, [scriptId, acquireLock])
+  }, [scriptId, acquireLock, client])
 
   return {
     lockStatus,

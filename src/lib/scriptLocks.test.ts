@@ -12,12 +12,12 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { supabase } from './supabase'
+import { testSupabase } from '../test/supabase-test-client'
 import { acquireScriptLock, scriptLocksTable } from './supabaseHelpers'
 
 // Test data factory
 const createTestScript = async (_userId: string) => {
-  const { data, error } = await supabase
+  const { data, error } = await testSupabase
     .from('scripts')
     .insert({
       video_id: 'test-video-1',
@@ -42,7 +42,7 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
 
   describe('Test 1: Auto-lock on script open', () => {
     it('should acquire lock for first user', async () => {
-      const { data, error } = await acquireScriptLock(testScriptId)
+      const { data, error } = await acquireScriptLock(testSupabase, testScriptId)
 
       expect(error).toBeNull()
       expect(data?.[0]).toMatchObject({
@@ -55,11 +55,11 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
 
     it('should prevent second user from acquiring same lock', async () => {
       // User A acquires lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // User B attempts to acquire (should fail with lock info)
       // NOTE: In real implementation, we'd switch auth context here
-      const { data, error } = await acquireScriptLock(testScriptId)
+      const { data, error } = await acquireScriptLock(testSupabase, testScriptId)
 
       expect(error).toBeNull() // Function should return success:false, not error
       expect(data?.[0]).toMatchObject({
@@ -72,10 +72,10 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
 
     it('should return existing lock when same user tries again', async () => {
       // User A acquires lock
-      const firstAcquire = await acquireScriptLock(testScriptId)
+      const firstAcquire = await acquireScriptLock(testSupabase, testScriptId)
 
       // User A tries again (should succeed with existing lock)
-      const secondAcquire = await acquireScriptLock(testScriptId)
+      const secondAcquire = await acquireScriptLock(testSupabase, testScriptId)
 
       expect(secondAcquire.data?.[0]?.success).toBe(true)
       expect(secondAcquire.data?.[0]?.locked_by_user_id).toBe(
@@ -88,8 +88,8 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
     it('should prevent concurrent acquisitions with SELECT FOR UPDATE NOWAIT', async () => {
       // Simulate 2 users acquiring simultaneously
       const [result1, result2] = await Promise.all([
-        acquireScriptLock(testScriptId),
-        acquireScriptLock(testScriptId)
+        acquireScriptLock(testSupabase, testScriptId),
+        acquireScriptLock(testSupabase, testScriptId)
       ])
 
       // Exactly ONE should succeed
@@ -112,7 +112,7 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
       // Fire 5 rapid acquisitions
       const results = await Promise.all(
         Array(5).fill(null).map(() =>
-          acquireScriptLock(testScriptId)
+          acquireScriptLock(testSupabase, testScriptId)
         )
       )
 
@@ -126,11 +126,11 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
   describe('Test 3: Lock expiration and cleanup', () => {
     it('should expire locks after 30 minutes without heartbeat', async () => {
       // Acquire lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // Simulate expired lock by manipulating last_heartbeat
       // Note: In real implementation, we'd mock time or use test-specific expiry
-      await scriptLocksTable()
+      await scriptLocksTable(testSupabase)
         .update({
           last_heartbeat: new Date(Date.now() - 31 * 60 * 1000).toISOString()
         })
@@ -138,7 +138,7 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
 
       // Different user should now be able to acquire
       // (Implementation should clean up expired lock)
-      const { data } = await acquireScriptLock(testScriptId)
+      const { data } = await acquireScriptLock(testSupabase, testScriptId)
 
       expect(data?.[0]?.success).toBe(true)
     })
@@ -147,10 +147,10 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
   describe('Test 4: Heartbeat updates', () => {
     it('should allow lock holder to update heartbeat', async () => {
       // Acquire lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // Update heartbeat
-      const { error } = await scriptLocksTable()
+      const { error } = await scriptLocksTable(testSupabase)
         .update({ last_heartbeat: new Date().toISOString() })
         .eq('script_id', testScriptId)
 
@@ -159,11 +159,11 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
 
     it('should prevent non-holder from updating heartbeat (RLS)', async () => {
       // User A acquires lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // User B tries to update heartbeat (should be blocked by RLS)
       // NOTE: In real implementation, we'd switch auth context
-      const { error } = await scriptLocksTable()
+      const { error } = await scriptLocksTable(testSupabase)
         .update({ last_heartbeat: new Date().toISOString() })
         .eq('script_id', testScriptId)
 
@@ -175,17 +175,17 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
   describe('Test 5: Lock release', () => {
     it('should allow lock holder to release lock', async () => {
       // Acquire lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // Release lock
-      const { error } = await scriptLocksTable()
+      const { error } = await scriptLocksTable(testSupabase)
         .delete()
         .eq('script_id', testScriptId)
 
       expect(error).toBeNull()
 
       // Verify lock is gone
-      const { data } = await scriptLocksTable()
+      const { data } = await scriptLocksTable(testSupabase)
         .select()
         .eq('script_id', testScriptId)
         .maybeSingle()
@@ -195,11 +195,11 @@ describe('Script Lock Acquisition (acquire_script_lock RPC)', () => {
 
     it('should allow admin to force-unlock any script', async () => {
       // User acquires lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // Admin force-unlocks
       // NOTE: In real implementation, we'd switch to admin auth context
-      const { error } = await scriptLocksTable()
+      const { error } = await scriptLocksTable(testSupabase)
         .delete()
         .eq('script_id', testScriptId)
 
@@ -219,20 +219,20 @@ describe('Lock Verification in save_script_with_components (CRITICAL)', () => {
   describe('Test 6: Save requires active lock', () => {
     it('should reject save if lock was stolen', async () => {
       // User A acquires lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // Admin force-unlocks
-      await scriptLocksTable()
+      await scriptLocksTable(testSupabase)
         .delete()
         .eq('script_id', testScriptId)
 
       // User B acquires lock
       // NOTE: In real implementation, switch to User B auth
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // User A attempts save (should fail with lock verification error)
       // NOTE: In real implementation, switch back to User A auth
-      const { error } = await supabase.rpc('save_script_with_components', {
+      const { error } = await testSupabase.rpc('save_script_with_components', {
         p_script_id: testScriptId,
         p_yjs_state: Buffer.from('test').toString('base64'),
         p_plain_text: 'Updated content',
@@ -245,10 +245,10 @@ describe('Lock Verification in save_script_with_components (CRITICAL)', () => {
 
     it('should allow save when lock is held', async () => {
       // Acquire lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // Save should succeed
-      const { error } = await supabase.rpc('save_script_with_components', {
+      const { error } = await testSupabase.rpc('save_script_with_components', {
         p_script_id: testScriptId,
         p_yjs_state: Buffer.from('test').toString('base64'),
         p_plain_text: 'Updated content',
@@ -260,17 +260,17 @@ describe('Lock Verification in save_script_with_components (CRITICAL)', () => {
 
     it('should reject save when lock has expired', async () => {
       // Acquire lock
-      await acquireScriptLock(testScriptId)
+      await acquireScriptLock(testSupabase, testScriptId)
 
       // Simulate expired lock
-      await scriptLocksTable()
+      await scriptLocksTable(testSupabase)
         .update({
           last_heartbeat: new Date(Date.now() - 31 * 60 * 1000).toISOString()
         })
         .eq('script_id', testScriptId)
 
       // Save should fail
-      const { error } = await supabase.rpc('save_script_with_components', {
+      const { error } = await testSupabase.rpc('save_script_with_components', {
         p_script_id: testScriptId,
         p_yjs_state: Buffer.from('test').toString('base64'),
         p_plain_text: 'Updated content',
@@ -293,10 +293,10 @@ describe('RLS Policies for script_locks', () => {
 
   it('should allow anyone to view locks (SELECT policy)', async () => {
     // Acquire lock
-    await acquireScriptLock(testScriptId)
+    await acquireScriptLock(testSupabase, testScriptId)
 
     // Anyone can read lock status
-    const { data, error } = await scriptLocksTable()
+    const { data, error } = await scriptLocksTable(testSupabase)
       .select()
       .eq('script_id', testScriptId)
       .maybeSingle()
@@ -308,7 +308,7 @@ describe('RLS Policies for script_locks', () => {
   it('should only allow users with script access to acquire locks', async () => {
     // User with no access tries to acquire
     // NOTE: In real implementation, switch to user without access
-    const { error } = await acquireScriptLock(testScriptId)
+    const { error } = await acquireScriptLock(testSupabase, testScriptId)
 
     // Should either fail or be blocked by user_accessible_scripts check
     // (Implementation detail: error or success:false)

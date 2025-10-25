@@ -30,8 +30,10 @@ import { useScriptLock } from './useScriptLock'
 import { testSupabase, signInAsTestUser, cleanupTestData, authDelay } from '../test/supabase-test-client'
 
 describe('useScriptLock (integration)', () => {
-  // Test script ID - unique per test run to avoid collisions
-  const TEST_SCRIPT_ID = `test-script-${Date.now()}`
+  // Test script ID - uses existing script from seed.sql (supabase/seed.sql)
+  // Script '00000000-0000-0000-0000-000000000101' is seeded as draft status
+  // Admin user has access to all scripts via user_accessible_scripts view
+  const TEST_SCRIPT_ID = '00000000-0000-0000-0000-000000000101'
 
   beforeEach(async () => {
     // Clean up any existing locks
@@ -51,7 +53,7 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 1: Auto-lock acquisition
   it('should acquire lock for first user', async () => {
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     // Wait for lock acquisition
     await waitFor(
@@ -81,7 +83,7 @@ describe('useScriptLock (integration)', () => {
   // TEST 2: Lock blocking (second user prevented)
   it('should prevent second user from acquiring same lock', async () => {
     // First user acquires lock
-    const { unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     // Wait for first user's lock to be created
     await waitFor(
@@ -96,7 +98,7 @@ describe('useScriptLock (integration)', () => {
     await authDelay()
     await signInAsTestUser(testSupabase, 'client')
 
-    const { result: result2, unmount: unmount2 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result: result2, unmount: unmount2 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
@@ -117,7 +119,7 @@ describe('useScriptLock (integration)', () => {
   it('should send heartbeat every 5 minutes', async () => {
     vi.useFakeTimers()
 
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     // Wait for initial lock acquisition
     await waitFor(
@@ -160,7 +162,7 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 4: Heartbeat failure recovery
   it('should detect heartbeat failure and re-acquire', async () => {
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
@@ -185,7 +187,7 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 5: Lock release on unmount
   it('should release lock on unmount', async () => {
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
@@ -214,7 +216,7 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 6: Manual unlock
   it('should allow manual unlock', async () => {
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
@@ -248,7 +250,7 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 7: Realtime lock acquisition detection
   it('should update lock status when another user acquires lock', async () => {
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
@@ -297,7 +299,7 @@ describe('useScriptLock (integration)', () => {
     await authDelay()
     await signInAsTestUser(testSupabase, 'admin')
 
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     // Should initially see as locked
     await waitFor(
@@ -336,7 +338,7 @@ describe('useScriptLock (integration)', () => {
     await authDelay()
     await signInAsTestUser(testSupabase, 'admin')
 
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
@@ -371,7 +373,7 @@ describe('useScriptLock (integration)', () => {
   it('should prevent concurrent lock acquisitions', async () => {
     // This test validates database-level UNIQUE constraint prevents dual ownership
 
-    const { result: result1, unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result: result1, unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
@@ -381,7 +383,7 @@ describe('useScriptLock (integration)', () => {
     )
 
     // Attempt concurrent acquisition (should fail due to UNIQUE constraint)
-    const { result: result2, unmount: unmount2 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID))
+    const { result: result2, unmount: unmount2 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
