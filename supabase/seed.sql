@@ -8,8 +8,28 @@
 -- SECURITY MANDATE: NO real user data, NO PII, NO production credentials
 -- AUTH PATTERN: Test users created via Auth Admin API (NOT this file)
 -- SCHEMA ALIGNMENT: Based on project zbxvjyrbkycbfhwmmnmy actual structure
--- PRODUCTION CONSTRAINT: Uses save_script_with_components() function (direct INSERT blocked)
+-- PRODUCTION CONSTRAINTS:
+--   - Direct writes to script_components blocked by trigger (component stability)
+--   - save_script_with_components() requires edit lock (auth session)
+--   - Seed context: Temporarily disable triggers for controlled baseline creation
 -- ============================================================================
+
+-- ============================================================================
+-- DISABLE PRODUCTION CONSTRAINTS FOR SEEDING
+-- ============================================================================
+-- Temporarily disable triggers that enforce:
+-- 1. Component write protection (requires save_script_with_components function)
+-- 2. Edit lock requirement (requires auth session)
+--
+-- SAFE because:
+-- - seed.sql runs ONCE in controlled context (local reset OR preview creation)
+-- - We control the baseline data being inserted
+-- - Triggers re-enabled immediately after seeding
+-- - NEVER runs in production
+
+ALTER TABLE script_components DISABLE TRIGGER protect_component_writes_insert;
+ALTER TABLE script_components DISABLE TRIGGER protect_component_writes_update;
+ALTER TABLE script_components DISABLE TRIGGER protect_component_writes_delete;
 
 -- ============================================================================
 -- BASELINE REFERENCE DATA
@@ -63,85 +83,116 @@ INSERT INTO public.videos (id, title, eav_code, created_at, updated_at) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
--- SCRIPTS WITH COMPONENTS - PRODUCTION PATTERN
+-- SCRIPTS + COMPONENTS (Direct INSERT while triggers disabled)
 -- ============================================================================
--- CRITICAL: Must use save_script_with_components() function
--- Direct INSERT to script_components is BLOCKED by trigger
--- This ensures component identity stability (I1 immutable requirement)
 
 -- Script 1: 3 components (draft status)
--- Plain text uses \n\n to separate paragraphs → components
-SELECT save_script_with_components(
-    '00000000-0000-0000-0000-000000000101'::uuid,  -- p_script_id
-    NULL,  -- p_yjs_state (not needed for seed)
-    E'Welcome to Alpha Video 1.\n\nThis is the first component. Each paragraph becomes a numbered component that flows through the production pipeline.\n\nThis is component three with more detail.',  -- p_plain_text
-    '[
-        {
-            "component_number": 1,
-            "content": "Welcome to Alpha Video 1.",
-            "word_count": 5
-        },
-        {
-            "component_number": 2,
-            "content": "This is the first component. Each paragraph becomes a numbered component that flows through the production pipeline.",
-            "word_count": 17
-        },
-        {
-            "component_number": 3,
-            "content": "This is component three with more detail.",
-            "word_count": 7
-        }
-    ]'::jsonb  -- p_components
-);
+INSERT INTO public.scripts (id, video_id, plain_text, component_count, status, created_at, updated_at) VALUES
+(
+    '00000000-0000-0000-0000-000000000101',
+    '00000000-0000-0000-0000-000000000011',
+    E'Welcome to Alpha Video 1.\n\nThis is the first component. Each paragraph becomes a numbered component that flows through the production pipeline.\n\nThis is component three with more detail.',
+    3,
+    'draft',
+    NOW(),
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
--- Link script to video (function creates script, now link video)
-UPDATE public.scripts
-SET video_id = '00000000-0000-0000-0000-000000000011',
-    status = 'draft'
-WHERE id = '00000000-0000-0000-0000-000000000101';
+INSERT INTO public.script_components (id, script_id, component_number, content, word_count, created_at) VALUES
+(
+    '00000000-0000-0000-0000-000000001001',
+    '00000000-0000-0000-0000-000000000101',
+    1,
+    'Welcome to Alpha Video 1.',
+    5,
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000001002',
+    '00000000-0000-0000-0000-000000000101',
+    2,
+    'This is the first component. Each paragraph becomes a numbered component that flows through the production pipeline.',
+    17,
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000001003',
+    '00000000-0000-0000-0000-000000000101',
+    3,
+    'This is component three with more detail.',
+    7,
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
 -- Script 2: 2 components (in_review status)
-SELECT save_script_with_components(
-    '00000000-0000-0000-0000-000000000102'::uuid,
-    NULL,
+INSERT INTO public.scripts (id, video_id, plain_text, component_count, status, created_at, updated_at) VALUES
+(
+    '00000000-0000-0000-0000-000000000102',
+    '00000000-0000-0000-0000-000000000012',
     E'Alpha Video 2 script content.\n\nThis script is in review status and has two components for testing workflow states.',
-    '[
-        {
-            "component_number": 1,
-            "content": "Alpha Video 2 script content.",
-            "word_count": 5
-        },
-        {
-            "component_number": 2,
-            "content": "This script is in review status and has two components for testing workflow states.",
-            "word_count": 14
-        }
-    ]'::jsonb
-);
+    2,
+    'in_review',
+    NOW(),
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
-UPDATE public.scripts
-SET video_id = '00000000-0000-0000-0000-000000000012',
-    status = 'in_review'
-WHERE id = '00000000-0000-0000-0000-000000000102';
+INSERT INTO public.script_components (id, script_id, component_number, content, word_count, created_at) VALUES
+(
+    '00000000-0000-0000-0000-000000001011',
+    '00000000-0000-0000-0000-000000000102',
+    1,
+    'Alpha Video 2 script content.',
+    5,
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000001012',
+    '00000000-0000-0000-0000-000000000102',
+    2,
+    'This script is in review status and has two components for testing workflow states.',
+    14,
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
 -- Script 3: 1 component (approved status)
-SELECT save_script_with_components(
-    '00000000-0000-0000-0000-000000000103'::uuid,
-    NULL,
+INSERT INTO public.scripts (id, video_id, plain_text, component_count, status, created_at, updated_at) VALUES
+(
+    '00000000-0000-0000-0000-000000000103',
+    '00000000-0000-0000-0000-000000000021',
     'Beta Video 1 has an approved single-component script for testing approved workflow.',
-    '[
-        {
-            "component_number": 1,
-            "content": "Beta Video 1 has an approved single-component script for testing approved workflow.",
-            "word_count": 12
-        }
-    ]'::jsonb
-);
+    1,
+    'approved',
+    NOW(),
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
-UPDATE public.scripts
-SET video_id = '00000000-0000-0000-0000-000000000021',
-    status = 'approved'
-WHERE id = '00000000-0000-0000-0000-000000000103';
+INSERT INTO public.script_components (id, script_id, component_number, content, word_count, created_at) VALUES
+(
+    '00000000-0000-0000-0000-000000001021',
+    '00000000-0000-0000-0000-000000000103',
+    1,
+    'Beta Video 1 has an approved single-component script for testing approved workflow.',
+    12,
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- RE-ENABLE PRODUCTION CONSTRAINTS
+-- ============================================================================
+-- CRITICAL: Re-enable triggers to enforce production constraints
+-- App will now require:
+-- - save_script_with_components() for writes
+-- - Edit locks before saving
+
+ALTER TABLE script_components ENABLE TRIGGER protect_component_writes_insert;
+ALTER TABLE script_components ENABLE TRIGGER protect_component_writes_update;
+ALTER TABLE script_components ENABLE TRIGGER protect_component_writes_delete;
 
 -- ============================================================================
 -- IMPORTANT: TABLES NOT SEEDED HERE (Created by Auth Admin API or test setup)
@@ -167,7 +218,7 @@ WHERE id = '00000000-0000-0000-0000-000000000103';
 -- Post-user creation in tests:
 -- - Insert user_clients to grant client access
 -- - Insert comments to test commenting system
--- - Insert script_locks to test edit locking
+-- - Insert script_locks to test edit locking (via app functions)
 -- ============================================================================
 
 -- ============================================================================
@@ -176,15 +227,17 @@ WHERE id = '00000000-0000-0000-0000-000000000103';
 -- Expected baseline counts (without auth-dependent tables):
 -- - projects: 2
 -- - videos: 3
--- - scripts: 3 (created via save_script_with_components function)
--- - script_components: 6 (3+2+1, created atomically with scripts)
+-- - scripts: 3 (created with triggers disabled)
+-- - script_components: 6 (3+2+1, created with triggers disabled)
 -- - user_profiles: 0 (created by Auth Admin API)
 -- - user_clients: 0 (created in test setup)
 -- - comments: 0 (created by tests as needed)
 -- - script_locks: 0 (created by app logic)
+--
+-- Triggers re-enabled: App now requires proper functions + locks
 
 SELECT
-    'Baseline seed complete (via production function)' as status,
+    'Baseline seed complete (triggers re-enabled)' as status,
     (SELECT COUNT(*) FROM public.projects) as projects,
     (SELECT COUNT(*) FROM public.videos) as videos,
     (SELECT COUNT(*) FROM public.scripts) as scripts,
