@@ -1,106 +1,212 @@
 -- ============================================================================
--- TEST DATABASE SEEDING
+-- SUPABASE PREVIEW TESTING - BASELINE SEED DATA (Production-Aligned)
 -- ============================================================================
--- Purpose: Seed local Supabase with test data for development and testing
--- Usage: Applied automatically via `supabase db reset` or `supabase db seed`
+-- Protocol: SUPABASE_PREVIEW_TESTING (v1.1.0)
+-- Purpose: Realistic baseline mirroring production schema structure
+-- Runs: ONCE at local db reset OR preview branch creation (NOT production)
+--
+-- SECURITY MANDATE: NO real user data, NO PII, NO production credentials
+-- AUTH PATTERN: Test users created via Auth Admin API (NOT this file)
+-- SCHEMA ALIGNMENT: Based on project zbxvjyrbkycbfhwmmnmy actual structure
 -- ============================================================================
 
--- Clean existing data (in dependency order)
-TRUNCATE TABLE public.comments CASCADE;
-TRUNCATE TABLE public.scripts CASCADE;
-TRUNCATE TABLE public.videos CASCADE;
-TRUNCATE TABLE public.projects CASCADE;
-TRUNCATE TABLE public.user_clients CASCADE;
--- NOTE: Skipping user_profiles - FK constraint requires auth.users entries
--- Tests will create users dynamically using factories
-
 -- ============================================================================
--- PROJECTS
+-- BASELINE REFERENCE DATA
 -- ============================================================================
--- Test projects with client_filter assignments
+-- Deterministic UUIDs for stable test relationships
+-- Pattern: 00000000-0000-0000-0000-0000000000XX
 
+-- Projects (2 test projects with realistic EAV codes and client filters)
 INSERT INTO public.projects (id, title, eav_code, client_filter, created_at, updated_at) VALUES
-('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Test Project Alpha', 'EAV1', 'CLIENT_A', NOW(), NOW()),
-('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Test Project Beta', 'EAV2', 'CLIENT_B', NOW(), NOW()),
-('cccccccc-cccc-cccc-cccc-cccccccccccc', 'Test Project Gamma', 'EAV99', 'CLIENT_A', NOW(), NOW());
+(
+    '00000000-0000-0000-0000-000000000001',
+    'Test Project Alpha',
+    'EAV1',
+    'CLIENT_ALPHA',
+    NOW(),
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000000002',
+    'Test Project Beta',
+    'EAV2',
+    'CLIENT_BETA',
+    NOW(),
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
--- ============================================================================
--- USER-CLIENT ASSIGNMENTS
--- ============================================================================
--- NOTE: Skipping user_clients - requires auth.users to exist
--- Tests will create users dynamically via Supabase Auth
-
--- ============================================================================
--- VIDEOS
--- ============================================================================
--- Test videos linked to projects via eav_code
-
+-- Videos (3 test videos linked to projects via eav_code)
 INSERT INTO public.videos (id, title, eav_code, created_at, updated_at) VALUES
-('dddddddd-dddd-dddd-dddd-dddddddddddd', 'Alpha Video 1', 'EAV1', NOW(), NOW()),
-('eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', 'Alpha Video 2', 'EAV1', NOW(), NOW()),
-('ffffffff-ffff-ffff-ffff-ffffffffffff', 'Beta Video 1', 'EAV2', NOW(), NOW());
+(
+    '00000000-0000-0000-0000-000000000011',
+    'Alpha Video 1',
+    'EAV1',
+    NOW(),
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000000012',
+    'Alpha Video 2',
+    'EAV1',
+    NOW(),
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000000021',
+    'Beta Video 1',
+    'EAV2',
+    NOW(),
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
--- ============================================================================
--- SCRIPTS
--- ============================================================================
--- Test scripts (Y.js state managed by app, just create minimal records)
-
+-- Scripts (3 test scripts with realistic status and component counts)
+-- IMPORTANT: component_count must match actual script_components rows
 INSERT INTO public.scripts (id, video_id, plain_text, component_count, status, created_at, updated_at) VALUES
 (
-    '10000000-0000-0000-0000-000000000001',
-    'dddddddd-dddd-dddd-dddd-dddddddddddd',
-    'Test script content for Alpha Video 1.',
-    2,
+    '00000000-0000-0000-0000-000000000101',
+    '00000000-0000-0000-0000-000000000011',
+    E'Welcome to Alpha Video 1.\n\nThis is the first component. Each paragraph becomes a numbered component that flows through the production pipeline.\n\nThis is component three with more detail.',
+    3,
     'draft',
     NOW(),
     NOW()
 ),
 (
-    '10000000-0000-0000-0000-000000000002',
-    'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
-    'Test script content for Alpha Video 2.',
-    1,
+    '00000000-0000-0000-0000-000000000102',
+    '00000000-0000-0000-0000-000000000012',
+    E'Alpha Video 2 script content.\n\nThis script is in review status and has two components for testing workflow states.',
+    2,
     'in_review',
     NOW(),
     NOW()
 ),
 (
-    '10000000-0000-0000-0000-000000000003',
-    'ffffffff-ffff-ffff-ffff-ffffffffffff',
-    'Test script content for Beta Video 1.',
+    '00000000-0000-0000-0000-000000000103',
+    '00000000-0000-0000-0000-000000000021',
+    E'Beta Video 1 has an approved single-component script for testing approved workflow.',
     1,
     'approved',
     NOW(),
     NOW()
-);
+)
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
--- COMMENTS (Optional - tests can create their own)
+-- SCRIPT COMPONENTS - THE SPINE TABLE (CRITICAL!)
 -- ============================================================================
--- NOTE: Skipping comments - requires user_profiles to exist
--- Tests will create comments dynamically after creating users
+-- Component identity stability: C1, C2, C3 remain stable across all 7 EAV apps
+-- Production pattern: Each paragraph = one component with sequential numbering
+-- MUST match scripts.component_count above
+
+-- Script 1: 3 components (draft status)
+INSERT INTO public.script_components (id, script_id, component_number, content, word_count, created_at) VALUES
+(
+    '00000000-0000-0000-0000-000000001001',
+    '00000000-0000-0000-0000-000000000101',
+    1,
+    'Welcome to Alpha Video 1.',
+    5,
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000001002',
+    '00000000-0000-0000-0000-000000000101',
+    2,
+    'This is the first component. Each paragraph becomes a numbered component that flows through the production pipeline.',
+    17,
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000001003',
+    '00000000-0000-0000-0000-000000000101',
+    3,
+    'This is component three with more detail.',
+    7,
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Script 2: 2 components (in_review status)
+INSERT INTO public.script_components (id, script_id, component_number, content, word_count, created_at) VALUES
+(
+    '00000000-0000-0000-0000-000000001011',
+    '00000000-0000-0000-0000-000000000102',
+    1,
+    'Alpha Video 2 script content.',
+    5,
+    NOW()
+),
+(
+    '00000000-0000-0000-0000-000000001012',
+    '00000000-0000-0000-0000-000000000102',
+    2,
+    'This script is in review status and has two components for testing workflow states.',
+    14,
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Script 3: 1 component (approved status)
+INSERT INTO public.script_components (id, script_id, component_number, content, word_count, created_at) VALUES
+(
+    '00000000-0000-0000-0000-000000001021',
+    '00000000-0000-0000-0000-000000000103',
+    1,
+    'Beta Video 1 has an approved single-component script for testing approved workflow.',
+    12,
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
--- REFRESH VIEWS (if needed)
+-- IMPORTANT: TABLES NOT SEEDED HERE (Created by Auth Admin API or test setup)
 -- ============================================================================
--- Note: user_accessible_scripts is a VIEW, not a MATERIALIZED VIEW
--- It updates automatically, no refresh needed
+--
+-- NOT SEEDED (Auth dependency):
+-- - user_profiles: Created via Auth Admin API (auth.users → user_profiles)
+-- - user_clients: Created in test setup AFTER users exist
+-- - comments: Created in test setup or individual tests
+-- - script_locks: Created by app logic during edit lock tests
+--
+-- SECURITY: Never seed auth.users or user_profiles with real data
+-- PATTERN: Test users created via Auth Admin API in test setup
+--
+-- See: scripts/create-test-users-via-api.mjs (CI/scripts)
+-- See: tests/setup/create-test-users.ts (test integration)
+--
+-- User creation happens:
+-- - Local: Run scripts/create-test-users-via-api.mjs manually
+-- - CI: Automated in .github/workflows/ci.yml
+-- - Tests: beforeAll/beforeEach via tests/setup/create-test-users.ts
+--
+-- Post-user creation in tests:
+-- - Insert user_clients to grant client access
+-- - Insert comments to test commenting system
+-- - Insert script_locks to test edit locking
+-- ============================================================================
 
 -- ============================================================================
 -- VERIFICATION
 -- ============================================================================
--- Expected counts:
--- - user_profiles: 4 (1 admin, 1 employee, 2 clients)
--- - projects: 3
+-- Expected baseline counts (without auth-dependent tables):
+-- - projects: 2
 -- - videos: 3
 -- - scripts: 3
--- - comments: 2
--- - user_clients: 2
--- - user_accessible_scripts: ~12 rows (admin+employee: 3 scripts each, clients: 3+0)
+-- - script_components: 6 (3+2+1 matching scripts.component_count)
+-- - user_profiles: 0 (created by Auth Admin API)
+-- - user_clients: 0 (created in test setup)
+-- - comments: 0 (created by tests as needed)
+-- - script_locks: 0 (created by app logic)
 
-SELECT 'Seed complete!' as status,
-    (SELECT COUNT(*) FROM public.user_profiles) as users,
+SELECT
+    'Baseline seed complete' as status,
     (SELECT COUNT(*) FROM public.projects) as projects,
     (SELECT COUNT(*) FROM public.videos) as videos,
     (SELECT COUNT(*) FROM public.scripts) as scripts,
-    (SELECT COUNT(*) FROM public.comments) as comments;
+    (SELECT COUNT(*) FROM public.script_components) as script_components,
+    (SELECT COUNT(*) FROM public.user_profiles) as user_profiles,
+    (SELECT COUNT(*) FROM public.user_clients) as user_clients,
+    (SELECT COUNT(*) FROM public.comments) as comments,
+    (SELECT COUNT(*) FROM public.script_locks) as script_locks;
