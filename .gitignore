@@ -73,3 +73,6 @@ package-lock.json.backup
 # TypeScript incremental builds
 *.tsbuildinfo
 .claude/
+
+# Backup directories
+.backup-temp/
