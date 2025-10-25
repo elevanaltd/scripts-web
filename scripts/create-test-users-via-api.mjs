@@ -37,7 +37,7 @@ const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 const users = [
   { email: 'admin.test@example.com', password: 'test-password-admin-123', role: 'admin', name: 'Test Admin User' },
   { email: 'client.test@example.com', password: 'test-password-client-123', role: 'client', name: 'Test Client User' },
-  { email: 'test-unauthorized@external.com', password: 'test-unauthorized-password-123', role: 'client', name: 'Test Unauthorized User' }
+  { email: 'unauthorized.test@example.com', password: 'test-password-unauth-123', role: 'client', name: 'Test Unauthorized User' }
 ];
 
 // Delete existing test users first (idempotent operation)
