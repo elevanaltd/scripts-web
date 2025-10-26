@@ -572,15 +572,6 @@ export const TipTapEditor: React.FC = () => {
     }
   }, [currentScript?.status]);
 
-  // Update editor editability when permissions change
-  // Per Vercel Bot PR#56 review: Editor editability only set at initialization
-  // Fix: Reactively update when permissions.canEditScript changes during session
-  useEffect(() => {
-    if (editor) {
-      editor.setEditable(permissions.canEditScript);
-    }
-  }, [editor, permissions.canEditScript]);
-
   // Add cleanup effect to handle component unmounting
   useEffect(() => {
     // Mark component as mounted
