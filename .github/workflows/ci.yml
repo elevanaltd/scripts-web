@@ -274,6 +274,19 @@ jobs:
 
       - name: Export Preview Branch environment variables
         run: |
+          # Debug: Check if token is accessible
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "❌ ERROR: SUPABASE_ACCESS_TOKEN is empty or not accessible"
+            echo "Environment: production"
+            echo "This usually means:"
+            echo "  1. Secret not configured in Production environment"
+            echo "  2. Environment protection rules blocking access"
+            echo "  3. Secret name mismatch"
+            exit 1
+          fi
+
+          echo "✅ Token accessible (length: ${#SUPABASE_ACCESS_TOKEN} chars)"
+
           # Login with access token
           echo "$SUPABASE_ACCESS_TOKEN" | supabase login --token -
 
