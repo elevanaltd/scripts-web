@@ -238,6 +238,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     needs: quality-gates
+    environment: production  # Access Production environment secrets (SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID)
     permissions:
       contents: read
 
