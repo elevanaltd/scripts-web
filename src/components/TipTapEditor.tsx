@@ -556,7 +556,12 @@ export const TipTapEditor: React.FC = () => {
     if (!editor) return;
 
     const isEditable = permissions.canEditScript && lockStatus === 'acquired';
-    editor.setEditable(isEditable);
+
+    // GUARD: Only call setEditable if editability is actually changing
+    // Prevents infinite loop: setEditable → onUpdate → extractComponents → state change → re-render
+    if (editor.isEditable !== isEditable) {
+      editor.setEditable(isEditable);
+    }
 
     if (!isEditable && lockStatus === 'unlocked') {
       // User lost lock - show warning via toast
