@@ -29,6 +29,7 @@ import {
   generateContentHash,
   type ScriptWorkflowStatus
 } from './scriptService';
+import { acquireScriptLock, scriptLocksTable } from '../lib/supabaseHelpers';
 
 // Test configuration - real Supabase integration
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmmnmy.supabase.co';
@@ -285,6 +286,10 @@ describe('scriptService - Integration Tests', () => {
       // Create script first
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, initialScript.id);
+      expect(lockResult.data).toBeTruthy();
+
       // Save with components using proper function (database enforces this)
       await saveScriptWithComponents(
         initialScript.id,
@@ -296,6 +301,11 @@ describe('scriptService - Integration Tests', () => {
         ],
         adminClient
       );
+
+      // Release lock after save (cleanup)
+      await scriptLocksTable(adminClient)
+        .delete()
+        .eq('script_id', initialScript.id);
 
       // Load via service to verify components are loaded
       const script = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
@@ -391,6 +401,10 @@ describe('scriptService - Integration Tests', () => {
 
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, initialScript.id);
+      expect(lockResult.data).toBeTruthy();
+
       // Create component using proper function (database enforces this)
       await saveScriptWithComponents(
         initialScript.id,
@@ -399,6 +413,11 @@ describe('scriptService - Integration Tests', () => {
         [{ number: 1, content: 'Test component', wordCount: 2, hash: generateContentHash('Test component') }],
         adminClient
       );
+
+      // Release lock after save (cleanup)
+      await scriptLocksTable(adminClient)
+        .delete()
+        .eq('script_id', initialScript.id);
 
       // Save script (should reload components)
       const updatedScript = await saveScript(initialScript.id, {
@@ -411,10 +430,27 @@ describe('scriptService - Integration Tests', () => {
   });
 
   describe('saveScriptWithComponents', () => {
+    let acquiredLockScriptId: string | null = null;
+
+    afterEach(async () => {
+      // Release lock after each test (cleanup)
+      if (acquiredLockScriptId) {
+        await scriptLocksTable(adminClient)
+          .delete()
+          .eq('script_id', acquiredLockScriptId);
+        acquiredLockScriptId = null;
+      }
+    });
+
     test('[ATOMIC SAVE] should save script and components atomically', async () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
+
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, initialScript.id);
+      expect(lockResult.data).toBeTruthy();
+      acquiredLockScriptId = initialScript.id;
 
       const components = [
         {
@@ -459,6 +495,11 @@ describe('scriptService - Integration Tests', () => {
 
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, initialScript.id);
+      expect(lockResult.data).toBeTruthy();
+      acquiredLockScriptId = initialScript.id;
+
       const updatedScript = await saveScriptWithComponents(
         initialScript.id,
         null,
@@ -474,6 +515,11 @@ describe('scriptService - Integration Tests', () => {
       await signInAsUser(adminClient, ADMIN_EMAIL, ADMIN_PASSWORD);
 
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
+
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, initialScript.id);
+      expect(lockResult.data).toBeTruthy();
+      acquiredLockScriptId = initialScript.id;
 
       // First save
       await saveScriptWithComponents(
@@ -510,6 +556,11 @@ describe('scriptService - Integration Tests', () => {
 
       const initialScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
       const testYjsState = new Uint8Array([10, 20, 30]);
+
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, initialScript.id);
+      expect(lockResult.data).toBeTruthy();
+      acquiredLockScriptId = initialScript.id;
 
       await saveScriptWithComponents(
         initialScript.id,
@@ -571,6 +622,10 @@ describe('scriptService - Integration Tests', () => {
 
       const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, createdScript.id);
+      expect(lockResult.data).toBeTruthy();
+
       await saveScriptWithComponents(
         createdScript.id,
         null,
@@ -578,6 +633,11 @@ describe('scriptService - Integration Tests', () => {
         [{ number: 1, content: 'Test', wordCount: 1, hash: generateContentHash('Test') }],
         adminClient
       );
+
+      // Release lock after save (cleanup)
+      await scriptLocksTable(adminClient)
+        .delete()
+        .eq('script_id', createdScript.id);
 
       const fetchedScript = await getScriptById(createdScript.id, adminClient);
 
@@ -655,6 +715,10 @@ describe('scriptService - Integration Tests', () => {
 
       const createdScript = await loadScriptForVideo(TEST_VIDEO_ID, 'admin', adminClient);
 
+      // Acquire lock before save (mimics production UI flow)
+      const lockResult = await acquireScriptLock(adminClient, createdScript.id);
+      expect(lockResult.data).toBeTruthy();
+
       await saveScriptWithComponents(
         createdScript.id,
         null,
@@ -662,6 +726,11 @@ describe('scriptService - Integration Tests', () => {
         [{ number: 1, content: 'Test', wordCount: 1, hash: generateContentHash('Test') }],
         adminClient
       );
+
+      // Release lock after save (cleanup)
+      await scriptLocksTable(adminClient)
+        .delete()
+        .eq('script_id', createdScript.id);
 
       const updatedScript = await updateScriptStatus(createdScript.id, 'in_review', adminClient);
 
