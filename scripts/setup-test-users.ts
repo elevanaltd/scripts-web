@@ -30,8 +30,8 @@ const TEST_USERS = [
     displayName: 'Test Client'
   },
   {
-    email: 'test-unauthorized@external.com',
-    password: 'test-unauthorized-password-123',
+    email: 'unauthorized.test@example.com',
+    password: 'test-password-unauth-123',
     role: null, // No role - unauthorized user
     displayName: 'Test Unauthorized'
   }
