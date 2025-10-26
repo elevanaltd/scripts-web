@@ -108,7 +108,8 @@ export default defineConfig(({ mode }) => {
         '**/*.spec.{ts,tsx}',
         'src/vite-env.d.ts',
         '*.config.{ts,js}',
-        'dist/'
+        'dist/',
+        '.backup-temp/**'
       ],
       thresholds: {
         lines: 90,
