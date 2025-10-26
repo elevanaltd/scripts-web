@@ -99,12 +99,13 @@ jobs:
 
       - name: Apply database migrations
         run: |
-          # Apply migrations WITHOUT seed.sql (seed has TRUNCATE that might affect auth)
-          # Using db push instead of db reset to skip automatic seeding
-          supabase db push --local
+          # EMERGENCY FIX 2025-10-26: Use db reset to ensure trigger functions apply correctly
+          # db push has issues with complex trigger function syntax (COALESCE → IF/ELSE replacement)
+          # db reset ensures clean migration application including function replacements
+          supabase db reset --local
 
-          echo "=== Schema initialized (migrations applied) ==="
-          echo "=== Test users and data will be seeded after npm install ==="
+          echo "=== Schema initialized via db reset (all migrations applied) ==="
+          echo "=== Test users will be created after npm install ==="
 
       - name: Override environment variables for local Supabase
         run: |
