@@ -288,8 +288,8 @@ jobs:
 
           echo "✅ Token accessible (length: ${#SUPABASE_ACCESS_TOKEN} chars)"
 
-          # Login with access token
-          echo "$SUPABASE_ACCESS_TOKEN" | supabase login --token -
+          # Login with access token (use printf to avoid trailing newline)
+          printf '%s' "$SUPABASE_ACCESS_TOKEN" | supabase login --token -
 
           # Get preview branch environment for current PR
           # This exports: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.
