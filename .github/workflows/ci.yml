@@ -192,8 +192,8 @@ jobs:
       - name: ESLint check
         run: npm run lint
 
-      - name: Run tests
-        run: npm run test -- --run
+      - name: Run unit tests
+        run: npm run test:unit -- --run
 
       - name: Capture Supabase logs on test failure
         if: failure()
