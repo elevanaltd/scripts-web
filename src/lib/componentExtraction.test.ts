@@ -1,7 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { extractComponents, isComponentParagraph } from './componentExtraction';
 import { generateContentHash } from '../services/scriptService';
 import { schema } from '@tiptap/pm/schema-basic';
+import { Editor } from '@tiptap/core';
+import StarterKit from '@tiptap/starter-kit';
 
 describe('extractComponents', () => {
 
@@ -72,6 +74,72 @@ describe('extractComponents', () => {
 
     expect(components).toHaveLength(1);
     expect(components[0].number).toBe(1);
+  });
+});
+
+describe('List item handling', () => {
+  let editor: Editor | null = null;
+
+  beforeEach(() => {
+    editor = new Editor({
+      extensions: [StarterKit],
+      content: '<p>Initial</p>',
+    });
+  });
+
+  afterEach(() => {
+    editor?.destroy();
+    editor = null;
+  });
+
+  it('should prefix bullet list items with dashes', () => {
+    editor!.commands.setContent('<ul><li><p>Rapid heating</p></li><li><p>3D Hot Air</p></li></ul>');
+    const doc = editor!.state.doc;
+
+    const components = extractComponents(doc, generateContentHash);
+
+    expect(components).toHaveLength(2);
+    expect(components[0].content).toBe('- Rapid heating');
+    expect(components[0].wordCount).toBe(2); // Excludes dash
+    expect(components[1].content).toBe('- 3D Hot Air');
+    expect(components[1].wordCount).toBe(3);
+  });
+
+  it('should handle ordered lists with number prefixes', () => {
+    editor!.commands.setContent('<ol><li><p>First step</p></li><li><p>Second step</p></li></ol>');
+    const doc = editor!.state.doc;
+
+    const components = extractComponents(doc, generateContentHash);
+
+    expect(components).toHaveLength(2);
+    expect(components[0].content).toBe('1. First step');
+    expect(components[0].wordCount).toBe(2);
+    expect(components[1].content).toBe('2. Second step');
+    expect(components[1].wordCount).toBe(2);
+  });
+
+  it('should handle mixed paragraphs and lists', () => {
+    editor!.commands.setContent('<p>Introduction</p><ul><li><p>Item one</p></li></ul><p>Conclusion</p>');
+    const doc = editor!.state.doc;
+
+    const components = extractComponents(doc, generateContentHash);
+
+    expect(components).toHaveLength(3);
+    expect(components[0].content).toBe('Introduction');
+    expect(components[1].content).toBe('- Item one');
+    expect(components[2].content).toBe('Conclusion');
+  });
+
+  it('should maintain sequential component numbering with lists', () => {
+    editor!.commands.setContent('<p>C1</p><ul><li><p>C2</p></li><li><p>C3</p></li></ul><p>C4</p>');
+    const doc = editor!.state.doc;
+
+    const components = extractComponents(doc, generateContentHash);
+
+    expect(components[0].number).toBe(1);
+    expect(components[1].number).toBe(2);
+    expect(components[2].number).toBe(3);
+    expect(components[3].number).toBe(4);
   });
 });
 
