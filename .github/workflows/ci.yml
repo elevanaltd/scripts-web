@@ -341,6 +341,34 @@ jobs:
             exit 0
           fi
 
+      # GAP 5 FIX: Extract service role key from Supabase status
+      # Context: Preview tests need service role key for Auth Admin API operations
+      # Pattern: Extract from authenticated session (no new secrets required)
+      - name: Extract Supabase Service Role Key
+        run: |
+          echo "=== Extracting service role key from Supabase status ==="
+
+          # Extract service role key from status (authenticated session already established)
+          SERVICE_ROLE_KEY=$(supabase status --project-id "$SUPABASE_PROJECT_ID" -o json 2>/dev/null | jq -r '.SERVICE_ROLE_KEY // empty')
+
+          if [ -z "$SERVICE_ROLE_KEY" ]; then
+            echo "❌ Failed to extract service role key from Supabase status"
+            echo "Attempting alternative extraction from branches get output..."
+
+            # Fallback: Try extracting from branches get (if already exported to env)
+            if [ -n "${{ env.SUPABASE_SERVICE_ROLE_KEY }}" ]; then
+              SERVICE_ROLE_KEY="${{ env.SUPABASE_SERVICE_ROLE_KEY }}"
+              echo "✅ Service role key found in environment from branches get"
+            else
+              echo "❌ Service role key not available in environment"
+              exit 1
+            fi
+          fi
+
+          # Export for subsequent steps
+          echo "SUPABASE_SERVICE_ROLE_KEY=$SERVICE_ROLE_KEY" >> $GITHUB_ENV
+          echo "✅ Service role key extracted and exported: ${SERVICE_ROLE_KEY:0:20}..." # Verify first 20 chars
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
