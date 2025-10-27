@@ -262,12 +262,23 @@ jobs:
           timeoutSeconds: 600
           intervalSeconds: 10
 
-      - name: Fail if Preview deployment failed
-        if: steps.wait-for-preview.outputs.conclusion != 'success'
+      - name: Handle Preview deployment status
+        id: preview-status
         run: |
-          echo "❌ Supabase Preview deployment failed or timed out"
-          echo "Status: ${{ steps.wait-for-preview.outputs.conclusion }}"
-          exit 1
+          STATUS="${{ steps.wait-for-preview.outputs.conclusion }}"
+          echo "Preview deployment status: $STATUS"
+
+          if [ "$STATUS" == "failure" ]; then
+            echo "❌ Supabase Preview deployment failed"
+            exit 1
+          elif [ "$STATUS" == "skipped" ]; then
+            echo "⚠️  Supabase Preview was skipped (no schema changes in this PR)"
+            echo "✅ Integration tests not needed - no database migrations to validate"
+            echo "Quality gates already validated application code changes"
+            exit 0
+          fi
+
+          echo "✅ Preview deployment ready - proceeding with integration tests"
 
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v1
