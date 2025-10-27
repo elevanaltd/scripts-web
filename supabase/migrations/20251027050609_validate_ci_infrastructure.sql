@@ -6,7 +6,7 @@
 --   - PR #19 fixes 7 CI gaps (token format, permissions, skip handling, etc.)
 --   - All preview branches deleted from previous merges
 --   - Test-methodology-guardian requires execution proof (NO_CLAIM_WITHOUT_PROOF)
---   - This migration triggers preview creation ’ CI executes full integration path ’ logs captured
+--   - This migration triggers preview creation -> CI executes full integration path -> logs captured
 --
 -- Reversion Plan:
 --   - After CI execution completes and logs are captured
