@@ -315,12 +315,31 @@ jobs:
           echo "=== Attempting login with direct --token argument ==="
           supabase login --token "$SUPABASE_ACCESS_TOKEN" --debug
 
-          # Get preview branch environment for current PR
-          # This exports: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.
-          supabase --experimental branches get "${{ github.head_ref }}" -o env >> $GITHUB_ENV
+          # GAP 4 FIX: Check if preview branch exists before attempting access
+          # Pattern: Tri-state logic (failure → exit 1, skipped → exit 0, success → continue)
+          # Context: Preview branches deleted after PR merge OR not created when no schema changes
+          BRANCH_NAME="${{ github.head_ref }}"
+          echo "=== Checking if preview branch '$BRANCH_NAME' exists ==="
 
-          echo "✅ Preview environment variables exported"
-          echo "Preview URL: ${{ env.SUPABASE_URL }}"
+          if supabase --experimental branches list --project-id "$SUPABASE_PROJECT_ID" 2>&1 | grep -q "$BRANCH_NAME"; then
+            echo "✅ Preview branch found, proceeding with integration tests..."
+
+            # Get preview branch environment for current PR
+            # This exports: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.
+            supabase --experimental branches get "$BRANCH_NAME" -o env >> $GITHUB_ENV
+
+            echo "✅ Preview environment variables exported"
+            echo "Preview URL: ${{ env.SUPABASE_URL }}"
+          else
+            echo "⚠️  No preview branch exists for '$BRANCH_NAME'"
+            echo "Possible reasons:"
+            echo "  1. No schema changes in this PR (no migrations → no preview created)"
+            echo "  2. Post-merge cleanup (Supabase deletes preview branches after PR merge)"
+            echo ""
+            echo "✅ Skipping integration tests gracefully (no preview environment to test against)"
+            echo "Quality gates (lint + typecheck + unit tests) already validated application code changes"
+            exit 0
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
