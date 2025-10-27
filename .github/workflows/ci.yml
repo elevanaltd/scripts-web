@@ -237,11 +237,12 @@ jobs:
     name: Preview Branch Integration Tests
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    continue-on-error: true  # Known issue: Supabase CLI rejecting hex-format PAT (sbp_b0d3...), expects numeric format (sbp_0102...). Does not block deployment - quality gates are primary protection.
+    continue-on-error: false  # Preview integration tests should pass now (Supabase token + packages:read permission fixed)
     needs: quality-gates
     environment: production  # Access Production environment secrets (SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_ID)
     permissions:
       contents: read
+      packages: read  # Required for GitHub Packages authentication (cross-repo @elevanaltd/shared-lib access)
 
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
