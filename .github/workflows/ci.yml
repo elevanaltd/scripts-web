@@ -322,12 +322,12 @@ jobs:
           BRANCH_NAME="${{ github.head_ref }}"
           echo "=== Checking if preview branch '$BRANCH_NAME' exists ==="
 
-          if supabase --experimental branches list --project-id "$SUPABASE_PROJECT_ID" 2>&1 | grep -q "$BRANCH_NAME"; then
+          if supabase --experimental branches list --project-ref "$SUPABASE_PROJECT_ID" 2>&1 | grep -q "$BRANCH_NAME"; then
             echo "✅ Preview branch found, proceeding with integration tests..."
 
             # Get preview branch environment for current PR
             # This exports: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.
-            supabase --experimental branches get "$BRANCH_NAME" -o env >> $GITHUB_ENV
+            supabase --experimental branches get "$BRANCH_NAME" --project-ref "$SUPABASE_PROJECT_ID" -o env >> $GITHUB_ENV
 
             echo "✅ Preview environment variables exported"
             echo "Preview URL: ${{ env.SUPABASE_URL }}"
@@ -370,7 +370,7 @@ jobs:
 
           # Get preview branch connection string
           BRANCH_NAME="${{ github.head_ref }}"
-          PREVIEW_DB_URL=$(supabase --experimental branches get "$BRANCH_NAME" --project-id "$SUPABASE_PROJECT_ID" -o env | grep "^DB_URL=" | cut -d "=" -f 2-)
+          PREVIEW_DB_URL=$(supabase --experimental branches get "$BRANCH_NAME" --project-ref "$SUPABASE_PROJECT_ID" -o env | grep "^DB_URL=" | cut -d "=" -f 2-)
 
           if [ -z "$PREVIEW_DB_URL" ]; then
             echo "❌ Failed to get preview database URL"
