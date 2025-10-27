@@ -53,7 +53,7 @@ export function extractComponents(
 
     // Handle orderedList nodes
     if (node.type.name === 'orderedList') {
-      let orderedListCounter = node.attrs?.start || 1;
+      let orderedListCounter = node.attrs?.start ?? 1;
       node.forEach((listItemNode: ProseMirrorNode) => {
         if (listItemNode.type.name === 'listItem') {
           const content = listItemNode.textContent.trim();
