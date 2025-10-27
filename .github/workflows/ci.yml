@@ -364,9 +364,31 @@ jobs:
 
           echo "✅ App configured for preview environment"
 
+      - name: Execute seed.sql in Preview Branch
+        run: |
+          echo "=== Seeding preview branch with baseline test data ==="
+
+          # Get preview branch connection string
+          BRANCH_NAME="${{ github.head_ref }}"
+          PREVIEW_DB_URL=$(supabase --experimental branches get "$BRANCH_NAME" --project-id "$SUPABASE_PROJECT_ID" -o env | grep "^DB_URL=" | cut -d "=" -f 2-)
+
+          if [ -z "$PREVIEW_DB_URL" ]; then
+            echo "❌ Failed to get preview database URL"
+            echo "Branch: $BRANCH_NAME"
+            echo "Project: $SUPABASE_PROJECT_ID"
+            exit 1
+          fi
+
+          echo "Preview DB: ${PREVIEW_DB_URL:0:50}..."
+
+          # Execute seed.sql against preview database
+          psql "$PREVIEW_DB_URL" < supabase/seed.sql
+
+          echo "✅ Baseline seed data applied to preview branch"
+
       - name: Create test users in Preview via Auth Admin API
         run: |
-          # Preview has baseline seed.sql already applied (runs once at creation)
+          # Baseline seed.sql creates projects/videos/scripts (run once per preview branch)
           # Now create test users via Auth Admin API (per-run data)
 
           # Gap 6 FIX: Export preview branch URL for test script
