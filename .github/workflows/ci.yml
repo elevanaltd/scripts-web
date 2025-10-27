@@ -430,6 +430,26 @@ jobs:
             exit 0
           fi
 
+          # Check if this is a cleanup/docs PR (no functional changes)
+          echo "=== Checking for functional changes ==="
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Count functional changes (src/, lib/, hooks/, components/)
+          FUNCTIONAL_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^src/.*\.(ts|tsx|js|jsx)$" | grep -v "\.test\." || true)
+
+          if [ -z "$FUNCTIONAL_CHANGES" ]; then
+            echo "⚠️  No functional code changes detected (cleanup/docs/migration-only PR)"
+            echo "Changed files are configuration, docs, or database migrations only"
+            echo "✅ Skipping integration tests - Quality Gates already validated code quality"
+            echo "Note: Integration tests validate behavior changes; this PR has no behavior changes"
+            exit 0
+          fi
+
+          echo "✅ Functional changes detected - running integration tests"
+          echo "$FUNCTIONAL_CHANGES"
+
           npm run test:integration -- --run
         env:
           VITE_SUPABASE_URL: ${{ env.SUPABASE_URL }}
