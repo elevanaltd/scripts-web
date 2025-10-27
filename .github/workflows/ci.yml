@@ -288,8 +288,17 @@ jobs:
 
           echo "✅ Token accessible (length: ${#SUPABASE_ACCESS_TOKEN} chars)"
 
+          # Debug: Check CLI version and token format
+          echo "=== Supabase CLI version ==="
+          supabase --version
+          echo ""
+          echo "=== Token format validation ==="
+          echo "Token prefix: ${SUPABASE_ACCESS_TOKEN:0:8}"
+          echo "Token length: ${#SUPABASE_ACCESS_TOKEN}"
+
           # Login with access token (use printf to avoid trailing newline)
-          printf '%s' "$SUPABASE_ACCESS_TOKEN" | supabase login --token -
+          echo "=== Attempting login with --debug ==="
+          printf '%s' "$SUPABASE_ACCESS_TOKEN" | supabase login --token - --debug
 
           # Get preview branch environment for current PR
           # This exports: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.
