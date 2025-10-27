@@ -31,6 +31,49 @@ export function extractComponents(
   const headerPattern = /^\[\[([A-Z0-9\s\-_]+)\]\]$/;
 
   doc.forEach((node: ProseMirrorNode) => {
+    // Handle bullet_list nodes
+    if (node.type.name === 'bulletList') {
+      node.forEach((listItemNode: ProseMirrorNode) => {
+        if (listItemNode.type.name === 'listItem') {
+          const content = listItemNode.textContent.trim();
+          if (content.length > 0) {
+            componentNum++;
+            const prefixedContent = `- ${content}`;
+            components.push({
+              number: componentNum,
+              content: prefixedContent,
+              wordCount: content.split(/\s+/).filter(Boolean).length,
+              hash: generateHash(prefixedContent)
+            });
+          }
+        }
+      });
+      return;
+    }
+
+    // Handle orderedList nodes
+    if (node.type.name === 'orderedList') {
+      let orderedListCounter = node.attrs?.start || 1;
+      node.forEach((listItemNode: ProseMirrorNode) => {
+        if (listItemNode.type.name === 'listItem') {
+          const content = listItemNode.textContent.trim();
+          if (content.length > 0) {
+            componentNum++;
+            const prefixedContent = `${orderedListCounter}. ${content}`;
+            components.push({
+              number: componentNum,
+              content: prefixedContent,
+              wordCount: content.split(/\s+/).filter(Boolean).length,
+              hash: generateHash(prefixedContent)
+            });
+            orderedListCounter++;
+          }
+        }
+      });
+      return;
+    }
+
+    // Handle paragraph nodes (existing logic)
     if (node.type.name === 'paragraph' && node.content.size > 0 && node.textContent.trim().length > 0) {
       const trimmedText = node.textContent.trim();
 
