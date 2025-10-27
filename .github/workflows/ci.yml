@@ -407,6 +407,27 @@ jobs:
             exit 0
           fi
 
+          # MIP OPTIMIZATION: Skip test user creation when integration tests will be skipped
+          # Aligns test infrastructure setup with test execution (Gap H pattern extension)
+          echo "=== Checking if test users needed ==="
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }})
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # Count functional changes (src/, lib/, hooks/, components/)
+          FUNCTIONAL_CHANGES=$(echo "$CHANGED_FILES" | grep -E "^src/.*\.(ts|tsx|js|jsx)$" | grep -v "\.test\." || true)
+
+          if [ -z "$FUNCTIONAL_CHANGES" ]; then
+            echo "⚠️  No functional code changes detected (cleanup/docs/migration-only PR)"
+            echo "Reason: Integration tests will be skipped per Gap H (no behavior changes to validate)"
+            echo "Impact: Test users not needed when integration tests won't run"
+            echo "✅ Skipping test user creation (MIP optimization - coordination theater elimination)"
+            exit 0
+          fi
+
+          echo "✅ Functional changes detected - creating test users for integration tests"
+          echo "$FUNCTIONAL_CHANGES"
+
           # Gap 6 FIX: Export preview branch URL for test script
           # Script reads VITE_SUPABASE_URL from environment, falling back to localhost
           export VITE_SUPABASE_URL=${{ env.SUPABASE_URL }}
