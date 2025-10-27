@@ -47,8 +47,8 @@ async function testCommentCreation() {
   const adminClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
   const { error: authError } = await adminClient.auth.signInWithPassword({
-    email: 'test-admin@elevana.com',
-    password: 'test-admin-password-123'
+    email: 'admin.test@example.com',
+    password: 'test-password-admin-123'
   });
 
   if (authError) {

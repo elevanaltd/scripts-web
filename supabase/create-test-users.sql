@@ -6,7 +6,7 @@ DO $$
 DECLARE
   admin_user_id uuid;
 BEGIN
-  SELECT id INTO admin_user_id FROM auth.users WHERE email = 'test-admin@elevana.com';
+  SELECT id INTO admin_user_id FROM auth.users WHERE email = 'admin.test@example.com';
 
   IF admin_user_id IS NULL THEN
     INSERT INTO auth.users (
@@ -14,7 +14,7 @@ BEGIN
       created_at, updated_at, raw_app_meta_data, raw_user_meta_data, aud, role
     ) VALUES (
       gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
-      'test-admin@elevana.com', crypt('test-admin-password-123', gen_salt('bf')),
+      'admin.test@example.com', crypt('test-password-admin-123', gen_salt('bf')),
       now(), now(), now(),
       '{"provider": "email", "providers": ["email"]}',
       '{"role": "admin"}', 'authenticated', 'authenticated'
@@ -22,7 +22,7 @@ BEGIN
   END IF;
 
   INSERT INTO public.user_profiles (id, email, display_name, role)
-  VALUES (admin_user_id, 'test-admin@elevana.com', 'Test Admin User', 'admin')
+  VALUES (admin_user_id, 'admin.test@example.com', 'Test Admin User', 'admin')
   ON CONFLICT (id) DO UPDATE SET role = 'admin', display_name = 'Test Admin User';
 END $$;
 
@@ -31,7 +31,7 @@ DO $$
 DECLARE
   client_user_id uuid;
 BEGIN
-  SELECT id INTO client_user_id FROM auth.users WHERE email = 'test-client@external.com';
+  SELECT id INTO client_user_id FROM auth.users WHERE email = 'client.test@example.com';
 
   IF client_user_id IS NULL THEN
     INSERT INTO auth.users (
@@ -39,7 +39,7 @@ BEGIN
       created_at, updated_at, raw_app_meta_data, raw_user_meta_data, aud, role
     ) VALUES (
       gen_random_uuid(), '00000000-0000-0000-0000-000000000000',
-      'test-client@external.com', crypt('test-client-password-123', gen_salt('bf')),
+      'client.test@example.com', crypt('test-password-client-123', gen_salt('bf')),
       now(), now(), now(),
       '{"provider": "email", "providers": ["email"]}',
       '{"role": "client"}', 'authenticated', 'authenticated'
@@ -47,7 +47,7 @@ BEGIN
   END IF;
 
   INSERT INTO public.user_profiles (id, email, display_name, role)
-  VALUES (client_user_id, 'test-client@external.com', 'Test Client User', 'client')
+  VALUES (client_user_id, 'client.test@example.com', 'Test Client User', 'client')
   ON CONFLICT (id) DO UPDATE SET role = 'client', display_name = 'Test Client User';
 END $$;
 

@@ -18,20 +18,20 @@ const SUPABASE_SERVICE_KEY = 'sb_secret_N7UND0UgjKTVK-Uodkm0Hg_xSvEMPvz' // Serv
 // Test user credentials (must match comments.test.ts)
 const TEST_USERS = [
   {
-    email: 'test-admin@elevana.com',
-    password: 'test-admin-password-123',
+    email: 'admin.test@example.com',
+    password: 'test-password-admin-123',
     role: 'admin',
     displayName: 'Test Admin'
   },
   {
-    email: 'test-client@external.com',
-    password: 'test-client-password-123',
+    email: 'client.test@example.com',
+    password: 'test-password-client-123',
     role: 'client',
     displayName: 'Test Client'
   },
   {
-    email: 'test-unauthorized@external.com',
-    password: 'test-unauthorized-password-123',
+    email: 'unauthorized.test@example.com',
+    password: 'test-password-unauth-123',
     role: null, // No role - unauthorized user
     displayName: 'Test Unauthorized'
   }

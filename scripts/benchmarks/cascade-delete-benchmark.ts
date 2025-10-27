@@ -23,8 +23,8 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://zbxvjyrbkycbfhwmm
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 // Test users
-const ADMIN_EMAIL = 'test-admin@elevana.com';
-const ADMIN_PASSWORD = 'test-admin-password-123';
+const ADMIN_EMAIL = 'admin.test@example.com';
+const ADMIN_PASSWORD = 'test-password-admin-123';
 
 // Test data
 const TEST_SCRIPT_ID = '0395f3f7-8eb7-4a1f-aa17-27d0d3a38680';

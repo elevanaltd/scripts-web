@@ -35,9 +35,9 @@ const adminClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 });
 
 const users = [
-  { email: 'test-admin@elevana.com', password: 'test-admin-password-123', role: 'admin', name: 'Test Admin User' },
-  { email: 'test-client@external.com', password: 'test-client-password-123', role: 'client', name: 'Test Client User' },
-  { email: 'test-unauthorized@external.com', password: 'test-unauthorized-password-123', role: 'client', name: 'Test Unauthorized User' }
+  { email: 'admin.test@example.com', password: 'test-password-admin-123', role: 'admin', name: 'Test Admin User' },
+  { email: 'client.test@example.com', password: 'test-password-client-123', role: 'client', name: 'Test Client User' },
+  { email: 'unauthorized.test@example.com', password: 'test-password-unauth-123', role: 'client', name: 'Test Unauthorized User' }
 ];
 
 // Delete existing test users first (idempotent operation)
@@ -55,6 +55,7 @@ for (const user of users) {
 console.log('\n👥 Creating test users via Auth API...');
 let successCount = 0;
 let failCount = 0;
+const createdUsers = []; // Track created users for user_clients
 
 for (const user of users) {
   console.log(`\n   📝 ${user.email} (${user.role})...`);
@@ -90,6 +91,34 @@ for (const user of users) {
   } else {
     console.log(`      ✓ User profile created`);
     successCount++;
+    // Track created user for user_clients
+    createdUsers.push({
+      id: data.user.id,
+      email: user.email,
+      role: user.role
+    });
+  }
+}
+
+// Create user_clients for client users (RLS testing)
+console.log('\n🔗 Creating user_clients for RLS testing...');
+const clientUsers = createdUsers.filter(u => u.role === 'client');
+for (const user of clientUsers) {
+  const clientFilter = user.email === 'client.test@example.com'
+    ? 'CLIENT_ALPHA'  // Matches seed.sql project
+    : 'CLIENT_UNAUTHORIZED'; // No matching projects
+
+  const { error: ucError } = await adminClient
+    .from('user_clients')
+    .upsert({
+      user_id: user.id,
+      client_filter: clientFilter
+    });
+
+  if (ucError) {
+    console.error(`      ❌ user_clients failed for ${user.email}: ${ucError.message}`);
+  } else {
+    console.log(`      ✓ Granted ${clientFilter} access to ${user.email}`);
   }
 }
 

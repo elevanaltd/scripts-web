@@ -55,10 +55,10 @@ const SUPABASE_ANON_KEY = import.meta.env?.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 const skipIfNoEnv = describe.skip; // Force skip until infrastructure established
 
 // Test user credentials (should be set up in test environment)
-const ADMIN_EMAIL = 'test-admin@elevana.com';
-const ADMIN_PASSWORD = 'test-admin-password-123';
-const CLIENT_EMAIL = 'test-client@external.com';
-const CLIENT_PASSWORD = 'test-client-password-123';
+const ADMIN_EMAIL = 'admin.test@example.com';
+const ADMIN_PASSWORD = 'test-password-admin-123';
+const CLIENT_EMAIL = 'client.test@example.com';
+const CLIENT_PASSWORD = 'test-password-client-123';
 const CLIENT2_EMAIL = 'test-client2@another.com';
 const CLIENT2_PASSWORD = 'test-client2-password-123';
 

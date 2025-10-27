@@ -33,8 +33,8 @@ async function updateUserRoles() {
   }
 
   // Find test users
-  const testAdmin = users.users.find(u => u.email === 'test-admin@elevana.com');
-  const testClient = users.users.find(u => u.email === 'test-client@external.com');
+  const testAdmin = users.users.find(u => u.email === 'admin.test@example.com');
+  const testClient = users.users.find(u => u.email === 'client.test@example.com');
   const testUnauthorized = users.users.find(u => u.email === 'test-unauthorized@external.com');
 
   if (!testAdmin || !testClient || !testUnauthorized) {
@@ -115,8 +115,8 @@ async function verifyRoles() {
   console.log('\n🔍 Verifying user roles...\n');
 
   const testUsers = [
-    { email: 'test-admin@elevana.com', expectedRole: 'admin' },
-    { email: 'test-client@external.com', expectedRole: 'client' },
+    { email: 'admin.test@example.com', expectedRole: 'admin' },
+    { email: 'client.test@example.com', expectedRole: 'client' },
     { email: 'test-unauthorized@external.com', expectedRole: null }
   ];
 

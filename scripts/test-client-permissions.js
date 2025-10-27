@@ -23,8 +23,8 @@ async function testClientPermissions() {
 
   // Sign in as client
   const { data: authData, error: authError } = await client.auth.signInWithPassword({
-    email: 'test-client@external.com',
-    password: 'test-client-password-123'
+    email: 'client.test@example.com',
+    password: 'test-password-client-123'
   });
 
   if (authError) {

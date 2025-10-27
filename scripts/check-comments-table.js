@@ -112,8 +112,8 @@ async function checkTestUsers() {
   console.log('\n👥 Checking test users...\n');
 
   const testEmails = [
-    'test-admin@elevana.com',
-    'test-client@external.com',
+    'admin.test@example.com',
+    'client.test@example.com',
     'test-unauthorized@external.com'
   ];
 

@@ -28,8 +28,8 @@ async function fixClientPolicy() {
 
   // Sign in as client
   const { data: authData } = await testClient.auth.signInWithPassword({
-    email: 'test-client@external.com',
-    password: 'test-client-password-123'
+    email: 'client.test@example.com',
+    password: 'test-password-client-123'
   });
 
   // Try to insert
@@ -74,8 +74,8 @@ async function fixClientPolicy() {
   const testClient2 = createClient(SUPABASE_URL, process.env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
   const { data: authData2 } = await testClient2.auth.signInWithPassword({
-    email: 'test-client@external.com',
-    password: 'test-client-password-123'
+    email: 'client.test@example.com',
+    password: 'test-password-client-123'
   });
 
   const { data: insertResult2, error: insertError2 } = await testClient2

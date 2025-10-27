@@ -1,0 +1,154 @@
+/**
+ * ScriptLockIndicator.css - Lock Status Indicator Styling
+ *
+ * **DESIGN PRINCIPLES**:
+ * - Color-coded states (green/yellow/gray/red)
+ * - Compact header bar integration
+ * - Mobile responsive
+ * - Accessible (high contrast, keyboard focus)
+ */
+
+.script-lock-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+/* Lock Status Icon */
+.lock-status-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+/* Lock Status Message */
+.lock-status-message {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Action Button */
+.lock-action-button {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.lock-action-button:hover {
+  opacity: 0.9;
+}
+
+.lock-action-button:focus {
+  outline: 2px solid #0066cc;
+  outline-offset: 2px;
+}
+
+/* Status: Acquired (Green) */
+.status-acquired {
+  background-color: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+}
+
+.status-acquired .lock-action-button {
+  background-color: #28a745;
+  color: white;
+}
+
+.status-acquired .lock-action-button:hover {
+  background-color: #218838;
+}
+
+/* Status: Locked (Yellow) */
+.status-locked {
+  background-color: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeaa7;
+}
+
+.status-locked .lock-action-button {
+  background-color: #ffc107;
+  color: #000;
+}
+
+.status-locked .lock-action-button:hover {
+  background-color: #e0a800;
+}
+
+/* Status: Checking (Gray) */
+.status-checking {
+  background-color: #e9ecef;
+  color: #495057;
+  border: 1px solid #ced4da;
+}
+
+/* Status: Unlocked/Lost (Red - Warning) */
+.status-unlocked {
+  background-color: #f8d7da;
+  color: #721c24;
+  border: 1px solid #f5c6cb;
+  font-weight: 600;
+}
+
+.status-unlocked .lock-action-button {
+  background-color: #dc3545;
+  color: white;
+}
+
+.status-unlocked .lock-action-button:hover {
+  background-color: #c82333;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .script-lock-indicator {
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .lock-status-icon {
+    font-size: 14px;
+  }
+
+  .lock-action-button {
+    padding: 3px 8px;
+    font-size: 12px;
+  }
+
+  /* On very small screens, hide long messages */
+  @media (max-width: 480px) {
+    .lock-status-message {
+      max-width: 120px;
+    }
+  }
+}
+
+/* Accessibility: High Contrast Mode Support */
+@media (prefers-contrast: high) {
+  .script-lock-indicator {
+    border-width: 2px;
+  }
+
+  .lock-action-button:focus {
+    outline-width: 3px;
+  }
+}
+
+/* Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .script-lock-indicator,
+  .lock-action-button {
+    transition: none;
+  }
+}

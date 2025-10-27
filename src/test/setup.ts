@@ -69,21 +69,45 @@ class BroadcastChannelStub extends EventTarget {
 // Replace Node's incompatible BroadcastChannel with test-compatible stub
 globalThis.BroadcastChannel = BroadcastChannelStub as typeof BroadcastChannel
 
-// Mock shared library to inject test credentials
-// Resolves 8 environment test failures by using v0.1.5 dependency injection pattern
-vi.mock('@elevanaltd/shared-lib/client', async () => {
-  const actual = await vi.importActual('@elevanaltd/shared-lib/client') as Record<string, unknown>
-  return {
-    ...actual,
-    createBrowserClient: (url?: string, key?: string) => {
-      // Override with test credentials when not provided
-      return (actual.createBrowserClient as (url?: string, key?: string) => unknown)(
-        url ?? 'https://test-project.supabase.co',
-        key ?? 'test-anon-key'
-      )
+/**
+ * Conditional Mock Scope: Unit vs Integration Tests
+ *
+ * **Strategy**: Two-tier testing strategy with different mock scopes
+ * - Unit tests: Mock Supabase client with fake credentials (isolation)
+ * - Integration tests: Use real Supabase client connecting to local instance
+ *
+ * **Detection**: VITEST_INTEGRATION environment variable
+ * - Not set: Unit test mode (fake credentials)
+ * - Set: Integration test mode (real Supabase at 127.0.0.1:54321)
+ *
+ * **Constitutional Basis**:
+ * - MINIMAL_INTERVENTION: Only mock when isolation is needed
+ * - Pattern 6 (004-DOC-SUPABASE-GITHUB-INTEGRATION-GUIDE.md): Integration tests require real client
+ * - test-methodology-guardian: BLOCKING authority on test infrastructure
+ *
+ * **References**:
+ * - Two-tier strategy: coordination/reports/005-REPORT-TEST-INFRA-ANALYSIS.md
+ * - Root cause analysis: coordination/reports/006-REPORT-INTEGRATION-TEST-ROOT-CAUSE.md
+ * - Implementation decision: coordination/apps/scripts-web/decisions/DECISION-CONDITIONAL-MOCK-SCOPE.md
+ */
+const isIntegrationTest = process.env.VITEST_INTEGRATION === 'true'
+
+// Only mock for unit tests - integration tests need real Supabase client
+if (!isIntegrationTest) {
+  vi.mock('@elevanaltd/shared-lib/client', async () => {
+    const actual = await vi.importActual('@elevanaltd/shared-lib/client') as Record<string, unknown>
+    return {
+      ...actual,
+      createBrowserClient: (url?: string, key?: string) => {
+        // Override with test credentials when not provided
+        return (actual.createBrowserClient as (url?: string, key?: string) => unknown)(
+          url ?? 'https://test-project.supabase.co',
+          key ?? 'test-anon-key'
+        )
+      }
     }
-  }
-})
+  })
+}
 
 // Extend Vitest matchers with Testing Library DOM matchers
 expect.extend({})

@@ -22,8 +22,8 @@ async function createClientAssignment() {
 
   // Get test users
   const { data: users } = await supabase.auth.admin.listUsers();
-  const testAdmin = users.users.find(u => u.email === 'test-admin@elevana.com');
-  const testClient = users.users.find(u => u.email === 'test-client@external.com');
+  const testAdmin = users.users.find(u => u.email === 'admin.test@example.com');
+  const testClient = users.users.find(u => u.email === 'client.test@example.com');
 
   if (!testAdmin || !testClient) {
     console.error('❌ Test users not found');

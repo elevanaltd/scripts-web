@@ -39,6 +39,8 @@ import { loadScriptForVideo, ComponentData, ScriptWorkflowStatus, generateConten
 import { Logger } from '../services/logger';
 import { extractComponents as extractComponentsFromDoc } from '../lib/componentExtraction';
 import { sanitizeHTML, handlePlainTextPaste, convertPlainTextToHTML, validateDOMPurifyConfig } from '../lib/editor/sanitizeUtils';
+import { useScriptLock } from '../hooks/useScriptLock';
+import { ScriptLockIndicator } from './ScriptLockIndicator';
 import './TipTapEditor.css';
 
 // Critical-Engineer: consulted for Security vulnerability assessment
@@ -87,6 +89,9 @@ export const TipTapEditor: React.FC = () => {
   const { userProfile } = useAuth();
   const permissions = usePermissions();
   const { toasts, showSuccess, showError } = useToast();
+
+  // Script lock management (Phase 3-4: Lock UI)
+  const { lockStatus, lockedBy } = useScriptLock(currentScript?.id);
 
   // Convert lastSaved from string (hook) to Date (component usage)
   const lastSaved = useMemo(
@@ -167,9 +172,10 @@ export const TipTapEditor: React.FC = () => {
   }, []);
 
   // Create editor first
-  // Editor editability controlled by permissions (clients are read-only)
+  // Editor editability controlled by permissions AND lock status
+  // User must have permission AND hold the lock to edit
   const editor = useEditor({
-    editable: permissions.canEditScript,
+    editable: permissions.canEditScript && lockStatus === 'acquired',
     extensions: [
       StarterKit.configure({
         paragraph: {
@@ -545,6 +551,24 @@ export const TipTapEditor: React.FC = () => {
     // We only care about the length of extractedComponents, not the array reference
   }, [saveStatus, lastSaved, extractedComponents.length, currentScript, updateScriptStatus, clearScriptStatus]);
 
+  // Update editor editability when lock status or permissions change (Phase 3-4: Lock UI)
+  useEffect(() => {
+    if (!editor) return;
+
+    const isEditable = permissions.canEditScript && lockStatus === 'acquired';
+
+    // GUARD: Only call setEditable if editability is actually changing
+    // Prevents infinite loop: setEditable → onUpdate → extractComponents → state change → re-render
+    if (editor.isEditable !== isEditable) {
+      editor.setEditable(isEditable);
+    }
+
+    if (!isEditable && lockStatus === 'unlocked') {
+      // User lost lock - show warning via toast
+      showError('⚠️ You lost the edit lock. Click "Re-acquire Lock" to continue editing.');
+    }
+  }, [editor, permissions.canEditScript, lockStatus, showError]);
+
   // Sync local displayStatus with currentScript.status (Issue 3 - UI reactivity fix)
   // Ensures dropdown updates when optimistic mutation completes
   useEffect(() => {
@@ -552,15 +576,6 @@ export const TipTapEditor: React.FC = () => {
       setDisplayStatus(currentScript.status);
     }
   }, [currentScript?.status]);
-
-  // Update editor editability when permissions change
-  // Per Vercel Bot PR#56 review: Editor editability only set at initialization
-  // Fix: Reactively update when permissions.canEditScript changes during session
-  useEffect(() => {
-    if (editor) {
-      editor.setEditable(permissions.canEditScript);
-    }
-  }, [editor, permissions.canEditScript]);
 
   // Add cleanup effect to handle component unmounting
   useEffect(() => {
@@ -664,7 +679,22 @@ export const TipTapEditor: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* Script Lock Indicator (Phase 3-4: Lock UI) */}
+            {currentScript && (
+              <ScriptLockIndicator scriptId={currentScript.id} />
+            )}
           </div>
+
+          {/* Lock Banner - Shows when another user has lock (Phase 3-4: Lock UI) */}
+          {lockStatus === 'locked' && lockedBy && (
+            <div className="lock-banner" role="alert">
+              <span className="lock-banner-icon">🔒</span>
+              <span className="lock-banner-message">
+                {lockedBy.name} is currently editing this script
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="editor-content">

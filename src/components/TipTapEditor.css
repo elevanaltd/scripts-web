@@ -340,3 +340,34 @@
   0% { background-color: #D1FAE5; }
   100% { background-color: #FEF3C7; }
 }
+
+/* Lock Banner (Phase 3-4: Lock UI) */
+.lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-top: 12px;
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 6px;
+  color: #856404;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.lock-banner-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.lock-banner-message {
+  flex: 1;
+}
+
+/* Accessibility: High contrast mode */
+@media (prefers-contrast: high) {
+  .lock-banner {
+    border-width: 2px;
+  }
+}

@@ -25,14 +25,14 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 // Test user configurations
 const TEST_USERS = [
   {
-    email: 'test-admin@elevana.com',
-    password: 'test-admin-password-123',
+    email: 'admin.test@example.com',
+    password: 'test-password-admin-123',
     role: 'admin',
     displayName: 'Test Admin User'
   },
   {
-    email: 'test-client@external.com',
-    password: 'test-client-password-123',
+    email: 'client.test@example.com',
+    password: 'test-password-client-123',
     role: 'client',
     displayName: 'Test Client User'
   },
