@@ -112,6 +112,43 @@ for (const user of users) {
   }
 
   if (error) {
+    // Check if user exists (idempotent operation - verify existing setup)
+    if (error.message.includes('already been registered')) {
+      console.log(`      ℹ️  User already exists, verifying configuration...`);
+
+      // Get existing user
+      const { data: checkUsers } = await adminClient.auth.admin.listUsers();
+      const existingUser = checkUsers.users.find(u => u.email === user.email);
+
+      if (existingUser) {
+        console.log(`      ✓ Found existing auth user: ${existingUser.id}`);
+
+        // Verify/create user profile (upsert ensures idempotency)
+        const { error: profileError } = await adminClient
+          .from('user_profiles')
+          .upsert({
+            id: existingUser.id,
+            email: user.email,
+            display_name: user.name,
+            role: user.role
+          });
+
+        if (profileError) {
+          console.error(`      ❌ Profile verification failed: ${profileError.message}`);
+          failCount++;
+        } else {
+          console.log(`      ✓ Profile verified/updated`);
+          successCount++;
+          createdUsers.push({
+            id: existingUser.id,
+            email: user.email,
+            role: user.role
+          });
+        }
+        continue;
+      }
+    }
+
     console.error(`      ❌ Auth API failed after ${attempts + 1} attempts: ${error.message}`);
     failCount++;
     continue;
