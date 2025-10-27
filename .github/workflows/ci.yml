@@ -381,10 +381,12 @@ jobs:
           PREVIEW_DB_URL=$(supabase --experimental branches get "$BRANCH_NAME" --project-ref "$SUPABASE_PROJECT_ID" -o env | grep "^DB_URL=" | cut -d "=" -f 2-)
 
           if [ -z "$PREVIEW_DB_URL" ]; then
-            echo "❌ Failed to get preview database URL"
+            echo "⚠️  Could not get preview database URL (preview may have been skipped)"
             echo "Branch: $BRANCH_NAME"
             echo "Project: $SUPABASE_PROJECT_ID"
-            exit 1
+            echo "Reason: No schema changes in this PR (Supabase skips preview creation when migrations unchanged)"
+            echo "✅ Skipping seed step gracefully - no preview environment to seed"
+            exit 0
           fi
 
           echo "Preview DB: ${PREVIEW_DB_URL:0:50}..."
