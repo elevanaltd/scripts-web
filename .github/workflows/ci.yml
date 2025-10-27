@@ -252,6 +252,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Gap J: Fetch full git history for git diff base...head in functional change detection
 
       - name: Wait for Supabase Preview to be ready
         uses: fountainhead/action-wait-for-check@v1.2.0
