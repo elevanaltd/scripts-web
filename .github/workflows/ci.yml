@@ -368,8 +368,16 @@ jobs:
         run: |
           echo "=== Seeding preview branch with baseline test data ==="
 
-          # Get preview branch connection string
+          # Check if preview branch exists first (same logic as export step)
           BRANCH_NAME="${{ github.head_ref }}"
+
+          if ! supabase --experimental branches list --project-ref "$SUPABASE_PROJECT_ID" 2>&1 | grep -q "$BRANCH_NAME"; then
+            echo "⚠️  No preview branch exists for '$BRANCH_NAME' - skipping seed step"
+            echo "Reason: Preview branch integration may not be configured OR no schema changes triggered preview creation"
+            exit 0
+          fi
+
+          # Get preview branch connection string
           PREVIEW_DB_URL=$(supabase --experimental branches get "$BRANCH_NAME" --project-ref "$SUPABASE_PROJECT_ID" -o env | grep "^DB_URL=" | cut -d "=" -f 2-)
 
           if [ -z "$PREVIEW_DB_URL" ]; then
@@ -391,6 +399,12 @@ jobs:
           # Baseline seed.sql creates projects/videos/scripts (run once per preview branch)
           # Now create test users via Auth Admin API (per-run data)
 
+          # Check if preview env vars were exported (indicates preview exists)
+          if [ -z "${{ env.SUPABASE_URL }}" ]; then
+            echo "⚠️  No preview environment variables - skipping test user creation"
+            exit 0
+          fi
+
           # Gap 6 FIX: Export preview branch URL for test script
           # Script reads VITE_SUPABASE_URL from environment, falling back to localhost
           export VITE_SUPABASE_URL=${{ env.SUPABASE_URL }}
@@ -406,7 +420,15 @@ jobs:
           echo "✅ Test users created in preview environment"
 
       - name: Run integration tests against Preview
-        run: npm run test:integration -- --run
+        run: |
+          # Check if preview env vars exist (indicates preview branch available)
+          if [ -z "${{ env.SUPABASE_URL }}" ]; then
+            echo "⚠️  No preview environment - skipping integration tests"
+            echo "Note: Unit tests already validated application code in quality-gates job"
+            exit 0
+          fi
+
+          npm run test:integration -- --run
         env:
           VITE_SUPABASE_URL: ${{ env.SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.SUPABASE_ANON_KEY }}
