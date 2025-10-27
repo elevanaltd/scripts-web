@@ -1,0 +1,23 @@
+-- CI validation migration (temporary, will be reverted)
+--
+-- Purpose: Force Supabase preview branch creation to validate CI infrastructure fixes
+--
+-- Context:
+--   - PR #19 fixes 7 CI gaps (token format, permissions, skip handling, etc.)
+--   - All preview branches deleted from previous merges
+--   - Test-methodology-guardian requires execution proof (NO_CLAIM_WITHOUT_PROOF)
+--   - This migration triggers preview creation ’ CI executes full integration path ’ logs captured
+--
+-- Reversion Plan:
+--   - After CI execution completes and logs are captured
+--   - This commit will be reverted with: git revert HEAD --no-edit
+--   - No permanent schema changes
+--
+-- Constitutional Authority:
+--   - Test-methodology-guardian BLOCKING authority (Lines 147-153)
+--   - NO_CLAIM_WITHOUT_PROOF mandate (Lines 166-188)
+--   - Holistic-orchestrator retained accountability for system coherence
+
+-- Minimal schema change: Add timestamp comment to projects table
+-- This is trivially reversible and has zero runtime impact
+COMMENT ON TABLE projects IS 'CI pipeline validation - 2025-10-27 05:06 UTC';
