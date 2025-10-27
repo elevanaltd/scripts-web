@@ -379,7 +379,7 @@ export type Database = {
           location_other: string | null
           location_start_point: string | null
           owner_user_id: string | null
-          scene_id: string
+          script_component_id: string
           shot_number: number
           shot_status: string | null
           shot_type: string | null
@@ -396,7 +396,7 @@ export type Database = {
           location_other?: string | null
           location_start_point?: string | null
           owner_user_id?: string | null
-          scene_id: string
+          script_component_id: string
           shot_number: number
           shot_status?: string | null
           shot_type?: string | null
@@ -413,7 +413,7 @@ export type Database = {
           location_other?: string | null
           location_start_point?: string | null
           owner_user_id?: string | null
-          scene_id?: string
+          script_component_id?: string
           shot_number?: number
           shot_status?: string | null
           shot_type?: string | null
@@ -425,10 +425,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "shots_scene_id_fkey"
-            columns: ["scene_id"]
+            foreignKeyName: "shots_script_component_id_fkey"
+            columns: ["script_component_id"]
             isOneToOne: false
-            referencedRelation: "scene_planning_state"
+            referencedRelation: "script_components"
             referencedColumns: ["id"]
           },
         ]
