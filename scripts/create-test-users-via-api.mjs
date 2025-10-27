@@ -51,6 +51,24 @@ for (const user of users) {
   }
 }
 
+// Verify cleanup completed (eventual consistency grace period)
+console.log('   ⏳ Waiting for auth system propagation...');
+await new Promise(resolve => setTimeout(resolve, 2000)); // 2s grace period
+
+const { data: verifyUsers } = await adminClient.auth.admin.listUsers();
+const remainingTestUsers = verifyUsers.users.filter(u =>
+  users.some(testUser => testUser.email === u.email)
+);
+if (remainingTestUsers.length > 0) {
+  console.error(`   ⚠️  Warning: ${remainingTestUsers.length} users still exist after cleanup:`);
+  remainingTestUsers.forEach(u => console.error(`      - ${u.email}`));
+  console.log('   🔄 Attempting additional cleanup pass...');
+  for (const user of remainingTestUsers) {
+    await adminClient.auth.admin.deleteUser(user.id);
+  }
+  await new Promise(resolve => setTimeout(resolve, 1000)); // Additional wait
+}
+
 // Create users via Auth API (proper way - handles auth.users + auth.identities)
 console.log('\n👥 Creating test users via Auth API...');
 let successCount = 0;
@@ -60,15 +78,41 @@ const createdUsers = []; // Track created users for user_clients
 for (const user of users) {
   console.log(`\n   📝 ${user.email} (${user.role})...`);
 
-  const { data, error } = await adminClient.auth.admin.createUser({
-    email: user.email,
-    password: user.password,
-    email_confirm: true, // Auto-confirm for testing
-    user_metadata: { role: user.role }
-  });
+  // Retry logic for eventual consistency issues
+  let data = null;
+  let error = null;
+  let attempts = 0;
+  const maxAttempts = 3;
+
+  while (attempts < maxAttempts) {
+    ({ data, error } = await adminClient.auth.admin.createUser({
+      email: user.email,
+      password: user.password,
+      email_confirm: true, // Auto-confirm for testing
+      user_metadata: { role: user.role }
+    }));
+
+    if (!error) break;
+
+    // If user exists, try deleting and retrying
+    if (error.message.includes('already been registered') && attempts < maxAttempts - 1) {
+      console.log(`      ⚠️  User exists after cleanup (attempt ${attempts + 1}/${maxAttempts})`);
+      const { data: checkUsers } = await adminClient.auth.admin.listUsers();
+      const ghostUser = checkUsers.users.find(u => u.email === user.email);
+      if (ghostUser) {
+        console.log(`      🔄 Deleting ghost user ${ghostUser.id}...`);
+        await adminClient.auth.admin.deleteUser(ghostUser.id);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      attempts++;
+      continue;
+    }
+
+    break;
+  }
 
   if (error) {
-    console.error(`      ❌ Auth API failed: ${error.message}`);
+    console.error(`      ❌ Auth API failed after ${attempts + 1} attempts: ${error.message}`);
     failCount++;
     continue;
   }
