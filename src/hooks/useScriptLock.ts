@@ -48,6 +48,12 @@ export function useScriptLock(
 
   // Get current user ID for ownership checks
   useEffect(() => {
+    // Guard against incomplete client mocks (e.g., test environments without auth)
+    // If client lacks auth interface, currentUserId remains null → safe default behavior
+    if (!client?.auth?.getUser) {
+      return
+    }
+
     client.auth.getUser().then(({ data }) => {
       setCurrentUserId(data.user?.id || null)
     })
