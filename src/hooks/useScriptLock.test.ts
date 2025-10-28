@@ -48,26 +48,6 @@ describe('useScriptLock (integration)', () => {
     // This serves as an implicit verification of the migration
     // If tests time out on realtime assertions, check that migration has been applied
 
-    // Diagnostic: Verify realtime publication is configured
-    console.log('[Test Setup] Environment:', {
-      supabaseUrl: testSupabase.supabaseUrl,
-      scriptId: TEST_SCRIPT_ID,
-      timestamp: new Date().toISOString()
-    })
-
-    // Verify script_locks table is in realtime publication
-    const { data: realtimeCheck, error: realtimeError } = await testSupabase
-      .from('pg_publication_tables')
-      .select('*')
-      .eq('pubname', 'supabase_realtime')
-      .eq('tablename', 'script_locks')
-
-    console.log('[Test Setup] Realtime publication check:', {
-      data: realtimeCheck,
-      error: realtimeError,
-      isConfigured: !!realtimeCheck && realtimeCheck.length > 0
-    })
-
     // Clear all mocks
     vi.clearAllMocks()
   })
