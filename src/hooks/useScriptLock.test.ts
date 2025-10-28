@@ -230,6 +230,12 @@ describe('useScriptLock (integration)', () => {
     // Unmount should trigger cleanup
     unmount()
 
+    // FIX: Add delay for async cleanup to complete
+    // Error-architect: React cleanup can't await async operations
+    // DELETE starts but may not complete before test verification
+    // Increased to 500ms for reliable async completion
+    await new Promise(resolve => setTimeout(resolve, 500))
+
     // Verify lock is deleted
     await waitFor(
       async () => {

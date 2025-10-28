@@ -39,11 +39,19 @@ export function useScriptLock(
     'checking'
   )
   const [lockedBy, setLockedBy] = useState<{ id: string; name: string } | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
   // Track acquisition state to prevent race conditions
   const isAcquiringRef = useRef(false)
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
+
+  // Get current user ID for ownership checks
+  useEffect(() => {
+    client.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id || null)
+    })
+  }, [client])
 
   // Auto-lock on mount
   const acquireLock = useCallback(async () => {
@@ -198,8 +206,21 @@ export function useScriptLock(
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
-            setLockStatus('locked')
-            setLockedBy({ id: newLock.locked_by_id, name: newLock.locked_by_name })
+
+            // FIX: Check ownership to prevent realtime events from overwriting 'acquired' status
+            // Error-architect: Distinguish between "I have lock" vs "someone else has lock"
+            // Database column is 'locked_by' (UUID), not 'locked_by_id'
+            if (newLock.locked_by === currentUserId) {
+              // Current user has the lock - confirm acquisition
+              setLockStatus('acquired')
+              // Don't update lockedBy - already set correctly by acquireLock
+            } else {
+              // Another user has the lock
+              setLockStatus('locked')
+              // Realtime payload only has UUID in locked_by column
+              // We don't get name from realtime (would need join in view/function)
+              setLockedBy({ id: newLock.locked_by, name: 'Unknown User' })
+            }
           } else if (payload.eventType === 'DELETE') {
             // Lock released - attempt re-acquisition
             acquireLock()
@@ -213,7 +234,7 @@ export function useScriptLock(
     return () => {
       client.removeChannel(channel)
     }
-  }, [scriptId, acquireLock, client])
+  }, [scriptId, acquireLock, client, currentUserId])
 
   return {
     lockStatus,
