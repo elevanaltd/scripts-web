@@ -27,7 +27,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { renderHook, waitFor } from '@testing-library/react'
 import { useScriptLock } from './useScriptLock'
-import { testSupabase, signInAsTestUser, cleanupTestData, authDelay } from '../test/supabase-test-client'
+import { testSupabase, signInAsTestUser, cleanupTestData, authDelay, createTestUserClient } from '../test/supabase-test-client'
 
 describe('useScriptLock (integration)', () => {
   // Test script ID - uses existing script from seed.sql (supabase/seed.sql)
@@ -36,11 +36,11 @@ describe('useScriptLock (integration)', () => {
   const TEST_SCRIPT_ID = '00000000-0000-0000-0000-000000000101'
 
   beforeEach(async () => {
-    // Clean up any existing locks
-    await cleanupTestData(testSupabase)
-
-    // Sign in as admin for test setup
+    // Sign in as admin FIRST so cleanup has proper permissions
     await signInAsTestUser(testSupabase, 'admin')
+
+    // Clean up any existing locks (admin can delete all locks via RLS)
+    await cleanupTestData(testSupabase)
 
     // Critical-engineer: Migration 20251028190000 must enable realtime for script_locks
     // ALTER PUBLICATION supabase_realtime ADD TABLE script_locks;
@@ -53,6 +53,9 @@ describe('useScriptLock (integration)', () => {
   })
 
   afterEach(async () => {
+    // Sign in as admin to ensure cleanup has proper permissions
+    await signInAsTestUser(testSupabase, 'admin')
+
     // Clean up test data after each test
     await cleanupTestData(testSupabase)
   })
@@ -313,24 +316,43 @@ describe('useScriptLock (integration)', () => {
       expect(clientResult.current.lockedBy?.name).toContain('Admin')
     }, { timeout: 10000 })
 
-    adminUnmount()
+    // Cleanup: unmount in reverse order (client first, then admin who owns the lock)
     clientUnmount()
+    adminUnmount()
+
+    // Wait for admin's unmount cleanup to complete (fire-and-forget DELETE)
+    await new Promise((resolve) => setTimeout(resolve, 500))
   }, 20000)
 
   // TEST 8: Realtime lock release detection
   it('should update lock status when lock is released', async () => {
-    // 1. Admin acquires lock
+    // Sign out testSupabase to prevent interference from beforeEach's admin session
+    await testSupabase.auth.signOut()
+    await authDelay()
+
+    // Create separate Supabase clients for admin and client to prevent
+    // signOut() from killing ALL realtime subscriptions
+    const adminClient = await createTestUserClient('admin')
+    const clientClient = await createTestUserClient('client')
+
+    // Ensure auth is fully propagated
+    await authDelay()
+
+    // Explicitly clean up any existing lock before starting
+    // (Handles race condition from Test 7's async unmount cleanup)
+    await cleanupTestData(adminClient)
+
+    // 1. Admin acquires lock with their own client
     const { result: adminResult, unmount: adminUnmount } = renderHook(() =>
-      useScriptLock(TEST_SCRIPT_ID, testSupabase)
+      useScriptLock(TEST_SCRIPT_ID, adminClient)
     )
     await waitFor(() => expect(adminResult.current.lockStatus).toBe('acquired'),
       { timeout: 10000 })
 
-    // 2. Client starts, sees admin's lock
+    // 2. Client starts with their own separate client, sees admin's lock
     await authDelay()
-    await signInAsTestUser(testSupabase, 'client')
     const { result: clientResult, unmount: clientUnmount } = renderHook(() =>
-      useScriptLock(TEST_SCRIPT_ID, testSupabase)
+      useScriptLock(TEST_SCRIPT_ID, clientClient)
     )
     await waitFor(() => expect(clientResult.current.lockStatus).toBe('locked'),
       { timeout: 10000 })
@@ -340,6 +362,7 @@ describe('useScriptLock (integration)', () => {
 
     // 4. Client should transition: locked → checking → acquired
     // DELETE event triggers acquireLock() which is asynchronous
+    // Both admin AND client subscriptions are alive, so both receive DELETE
     await waitFor(() => {
       expect(clientResult.current.lockStatus).not.toBe('locked')
     }, { timeout: 5000 })
@@ -348,25 +371,42 @@ describe('useScriptLock (integration)', () => {
       expect(clientResult.current.lockStatus).toBe('acquired')
     }, { timeout: 10000 })
 
+    // Cleanup both clients
     adminUnmount()
     clientUnmount()
+    await adminClient.auth.signOut()
+    await clientClient.auth.signOut()
   }, 25000)
 
   // TEST 9: Admin force unlock
   it('should allow admin to force-unlock', async () => {
-    // 1. Client acquires lock
-    await signInAsTestUser(testSupabase, 'client')
+    // Sign out testSupabase to prevent interference from beforeEach's admin session
+    await testSupabase.auth.signOut()
+    await authDelay()
+
+    // Create separate Supabase clients for client and admin to prevent
+    // signOut() from killing ALL realtime subscriptions
+    const clientClient = await createTestUserClient('client')
+    const adminClient = await createTestUserClient('admin')
+
+    // Ensure auth is fully propagated
+    await authDelay()
+
+    // Explicitly clean up any existing lock before starting
+    // (Handles race condition from previous test's async unmount cleanup)
+    await cleanupTestData(adminClient)
+
+    // 1. Client acquires lock with their own client
     const { result: clientResult, unmount: clientUnmount } = renderHook(() =>
-      useScriptLock(TEST_SCRIPT_ID, testSupabase)
+      useScriptLock(TEST_SCRIPT_ID, clientClient)
     )
     await waitFor(() => expect(clientResult.current.lockStatus).toBe('acquired'),
       { timeout: 10000 })
 
-    // 2. Admin sees client's lock
+    // 2. Admin sees client's lock with their own separate client
     await authDelay()
-    await signInAsTestUser(testSupabase, 'admin')
     const { result: adminResult, unmount: adminUnmount } = renderHook(() =>
-      useScriptLock(TEST_SCRIPT_ID, testSupabase)
+      useScriptLock(TEST_SCRIPT_ID, adminClient)
     )
     await waitFor(() => expect(adminResult.current.lockStatus).toBe('locked'),
       { timeout: 10000 })
@@ -376,7 +416,7 @@ describe('useScriptLock (integration)', () => {
 
     // 4. Lock should be deleted (verify in database)
     await waitFor(async () => {
-      const { data } = await testSupabase
+      const { data } = await adminClient
         .from('script_locks')
         .select('*')
         .eq('script_id', TEST_SCRIPT_ID)
@@ -390,8 +430,11 @@ describe('useScriptLock (integration)', () => {
       expect(adminResult.current.lockStatus).toBe('unlocked')
     }, { timeout: 3000 })
 
+    // Cleanup both clients
     adminUnmount()
     clientUnmount()
+    await adminClient.auth.signOut()
+    await clientClient.auth.signOut()
   }, 20000)
 
   // TEST 10: Race condition prevention (critical-engineer requirement)

@@ -169,13 +169,59 @@ export async function signInAsTestUser(
 /**
  * Clean up test data
  * Safe to use in preview branches (isolated per PR)
+ *
+ * **Multi-user test compatibility:**
+ * Uses polling to wait for locks to actually be deleted, handling race conditions
+ * from async unmount cleanup (fire-and-forget DELETE operations).
  */
 export async function cleanupTestData(client: SupabaseClient<Database>) {
   // Clean script_locks table
   await client.from('script_locks').delete().neq('script_id', '')
 
+  // Wait for deletion to actually complete (handles async unmount race conditions)
+  let retries = 0
+  while (retries < 10) {
+    const { data } = await client.from('script_locks').select('script_id').limit(1).maybeSingle()
+    if (!data) break
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    retries++
+  }
+
   // Note: Preview branches are ephemeral, so cleanup is optional
   // but good practice for local testing
+}
+
+/**
+ * Create a separate Supabase client for multi-user testing
+ *
+ * **Use Case:** Tests where multiple users need simultaneous realtime subscriptions
+ *
+ * **Why Needed:** signInAsTestUser() calls signOut() which disconnects ALL realtime
+ * subscriptions on a client instance. In multi-user tests, each user needs an
+ * isolated client to maintain independent subscriptions.
+ *
+ * **Production Note:** This is a test infrastructure concern only. In production,
+ * each browser session has its own Supabase client instance naturally.
+ */
+export async function createTestUserClient(
+  userType: keyof typeof TEST_USERS
+): Promise<SupabaseClient<Database>> {
+  await authDelay()
+
+  const client = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+  const { email, password } = TEST_USERS[userType]
+  const { data, error } = await client.auth.signInWithPassword({ email, password })
+
+  if (error) {
+    throw new Error(`Failed to create client for ${userType}: ${error.message}`)
+  }
+
+  if (!data.user) {
+    throw new Error(`No user returned for ${userType}`)
+  }
+
+  return client
 }
 
 /**

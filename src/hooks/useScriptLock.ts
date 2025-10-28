@@ -325,16 +325,22 @@ export function useScriptLock(
             }
           } else if (payload.eventType === 'DELETE') {
             console.log('[useScriptLock] Processing DELETE:', {
-              isIntentionalUnlock: isIntentionalUnlockRef.current
+              isIntentionalUnlock: isIntentionalUnlockRef.current,
+              currentLockStatus: lockStatusRef.current
             })
-            // Lock released - check if it was intentional before re-acquiring
-            // Intentional unlocks: manual unlock, force unlock, unmount cleanup
-            // Only re-acquire if lock was lost unexpectedly (e.g., heartbeat failure, other user takeover)
-            if (!isIntentionalUnlockRef.current) {
-              console.log('[useScriptLock] Unexpected DELETE - re-acquiring lock')
-              acquireLock()
+
+            // FIX: Always update state immediately when DELETE received
+            if (isIntentionalUnlockRef.current) {
+              // Intentional unlock (manual/force/unmount) - set status to unlocked
+              console.log('[useScriptLock] Intentional DELETE - setting status to unlocked')
+              setLockStatus('unlocked')
+              setLockedBy(null)
             } else {
-              console.log('[useScriptLock] Intentional DELETE - skipping re-acquisition')
+              // Unexpected DELETE (another user released, heartbeat expired, etc.)
+              // Attempt to re-acquire lock
+              console.log('[useScriptLock] Unexpected DELETE - attempting re-acquisition')
+              setLockStatus('checking')  // Immediate visual feedback
+              acquireLock()  // Async re-acquisition
             }
           }
         }
