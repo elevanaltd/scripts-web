@@ -42,6 +42,12 @@ describe('useScriptLock (integration)', () => {
     // Sign in as admin for test setup
     await signInAsTestUser(testSupabase, 'admin')
 
+    // Critical-engineer: Migration 20251028190000 must enable realtime for script_locks
+    // ALTER PUBLICATION supabase_realtime ADD TABLE script_locks;
+    // Tests will fail with timeout if realtime subscription doesn't receive events
+    // This serves as an implicit verification of the migration
+    // If tests time out on realtime assertions, check that migration has been applied
+
     // Clear all mocks
     vi.clearAllMocks()
   })
@@ -300,6 +306,10 @@ describe('useScriptLock (integration)', () => {
     await authDelay()
     const clientUserId = await signInAsTestUser(testSupabase, 'client')
 
+    // FIX RLS: Switch back to admin to manipulate locks (only lock holder or admin can delete)
+    // Critical-engineer: Use admin session for DB manipulation, hook continues as original user
+    await signInAsTestUser(testSupabase, 'admin')
+
     // Delete existing lock and create new one for client
     await testSupabase.from('script_locks').delete().eq('script_id', TEST_SCRIPT_ID)
 
@@ -323,18 +333,23 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 8: Realtime lock release detection
   it('should update lock status when lock is released', async () => {
-    // Start with lock held by another user
+    // FIX RLS: Start as admin to create lock record
+    // Critical-engineer: Use admin session for DB manipulation
+    await signInAsTestUser(testSupabase, 'admin')
+
+    // Get client user ID for lock ownership
+    await authDelay()
     const clientUserId = await signInAsTestUser(testSupabase, 'client')
+
+    // Switch back to admin to insert lock
+    await authDelay()
+    await signInAsTestUser(testSupabase, 'admin')
 
     await testSupabase.from('script_locks').insert({
       script_id: TEST_SCRIPT_ID,
       locked_by: clientUserId,
       last_heartbeat: new Date().toISOString(),
     })
-
-    // Sign back in as admin
-    await authDelay()
-    await signInAsTestUser(testSupabase, 'admin')
 
     const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
@@ -346,7 +361,7 @@ describe('useScriptLock (integration)', () => {
       { timeout: 10000 }
     )
 
-    // Release the lock (simulate other user unlocking)
+    // Release the lock (simulate other user unlocking) - admin can delete any lock
     await testSupabase.from('script_locks').delete().eq('script_id', TEST_SCRIPT_ID)
 
     // Should detect release and attempt re-acquisition
@@ -362,18 +377,23 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 9: Admin force unlock
   it('should allow admin to force-unlock', async () => {
-    // Create lock held by client
+    // FIX RLS: Start as admin to create lock record
+    // Critical-engineer: Use admin session for DB manipulation
+    await signInAsTestUser(testSupabase, 'admin')
+
+    // Get client user ID for lock ownership
+    await authDelay()
     const clientUserId = await signInAsTestUser(testSupabase, 'client')
+
+    // Switch back to admin to insert lock
+    await authDelay()
+    await signInAsTestUser(testSupabase, 'admin')
 
     await testSupabase.from('script_locks').insert({
       script_id: TEST_SCRIPT_ID,
       locked_by: clientUserId,
       last_heartbeat: new Date().toISOString(),
     })
-
-    // Sign in as admin
-    await authDelay()
-    await signInAsTestUser(testSupabase, 'admin')
 
     const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 

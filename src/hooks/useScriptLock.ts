@@ -207,8 +207,16 @@ export function useScriptLock(
       // TMG Analysis: Closure captured lockStatus='checking' at mount time
       // By unmount, status is 'acquired' but closure has old value → DELETE never fires
       // Pattern: Same ref pattern as currentUserIdRef (lines 52, 262)
+      // Critical-engineer: Add .then()/.catch() for DELETE completion tracking
+      // React cleanup can't be async, so use fire-and-forget with observability
       if (scriptId && lockStatusRef.current === 'acquired') {
-        scriptLocksTable(client).delete().eq('script_id', scriptId)
+        scriptLocksTable(client)
+          .delete()
+          .eq('script_id', scriptId)
+          .then(
+            () => console.log('[useScriptLock] Lock cleaned up on unmount'),
+            (err: unknown) => console.error('[useScriptLock] Unmount cleanup failed:', err)
+          )
       }
 
       // Clear heartbeat interval
