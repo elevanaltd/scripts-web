@@ -338,10 +338,15 @@ describe('useScriptLock (integration)', () => {
     // 3. Admin releases lock (intentional unlock)
     await adminResult.current.releaseLock()
 
-    // 4. Client should auto-acquire after admin releases
+    // 4. Client should transition: locked → checking → acquired
+    // DELETE event triggers acquireLock() which is asynchronous
+    await waitFor(() => {
+      expect(clientResult.current.lockStatus).not.toBe('locked')
+    }, { timeout: 5000 })
+
     await waitFor(() => {
       expect(clientResult.current.lockStatus).toBe('acquired')
-    }, { timeout: 15000 })
+    }, { timeout: 10000 })
 
     adminUnmount()
     clientUnmount()
@@ -380,7 +385,10 @@ describe('useScriptLock (integration)', () => {
     }, { timeout: 5000 })
 
     // 5. Admin status should be unlocked (admin chose not to acquire after force-unlock)
-    expect(adminResult.current.lockStatus).toBe('unlocked')
+    // Wait for realtime DELETE event to complete and status to stabilize
+    await waitFor(() => {
+      expect(adminResult.current.lockStatus).toBe('unlocked')
+    }, { timeout: 3000 })
 
     adminUnmount()
     clientUnmount()
@@ -389,6 +397,7 @@ describe('useScriptLock (integration)', () => {
   // TEST 10: Race condition prevention (critical-engineer requirement)
   it('should prevent concurrent lock acquisitions', async () => {
     // This test validates database-level UNIQUE constraint prevents dual ownership
+    // Admin acquires first, client (different user) should be blocked
 
     const { result: result1, unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
@@ -399,12 +408,15 @@ describe('useScriptLock (integration)', () => {
       { timeout: 10000 }
     )
 
-    // Attempt concurrent acquisition (should fail due to UNIQUE constraint)
+    // Switch to different user for concurrent acquisition attempt
+    await authDelay()
+    await signInAsTestUser(testSupabase, 'client')
+
     const { result: result2, unmount: unmount2 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
 
     await waitFor(
       () => {
-        // Second hook should see as locked
+        // Second hook (different user) should see as locked
         expect(result2.current.lockStatus).toBe('locked')
       },
       { timeout: 10000 }
@@ -420,5 +432,5 @@ describe('useScriptLock (integration)', () => {
 
     unmount1()
     unmount2()
-  }, 15000)
+  }, 20000)
 })
