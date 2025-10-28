@@ -51,6 +51,10 @@ export function useScriptLock(
   // Research: https://supabase.com/docs + React closure patterns
   const currentUserIdRef = useRef<string | null>(null)
 
+  // Track intentional unlocks to prevent false re-acquisition
+  // When user manually unlocks or component unmounts, we should NOT re-acquire
+  const isIntentionalUnlockRef = useRef(false)
+
   // Get current user ID for ownership checks
   useEffect(() => {
     // Guard against incomplete client mocks (e.g., test environments without auth)
@@ -131,11 +135,20 @@ export function useScriptLock(
     if (!scriptId) return
 
     try {
+      // Mark as intentional unlock to prevent realtime DELETE handler from re-acquiring
+      isIntentionalUnlockRef.current = true
+
       await scriptLocksTable(client).delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
+
+      // Reset flag after DELETE completes and realtime processes
+      setTimeout(() => {
+        isIntentionalUnlockRef.current = false
+      }, 1000)
     } catch (err) {
       console.error('Lock release failed:', err)
+      isIntentionalUnlockRef.current = false
     }
   }, [scriptId, client])
 
@@ -152,11 +165,20 @@ export function useScriptLock(
     if (!scriptId) return
 
     try {
+      // Mark as intentional unlock to prevent realtime DELETE handler from re-acquiring
+      isIntentionalUnlockRef.current = true
+
       await scriptLocksTable(client).delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
+
+      // Reset flag after DELETE completes and realtime processes
+      setTimeout(() => {
+        isIntentionalUnlockRef.current = false
+      }, 1000)
     } catch (err) {
       console.error('Force unlock failed:', err)
+      isIntentionalUnlockRef.current = false
     }
   }, [scriptId, client])
 
@@ -168,6 +190,9 @@ export function useScriptLock(
 
     // Cleanup on unmount
     return () => {
+      // Mark as intentional unlock (unmount cleanup)
+      isIntentionalUnlockRef.current = true
+
       if (scriptId && lockStatus === 'acquired') {
         scriptLocksTable(client).delete().eq('script_id', scriptId)
       }
@@ -242,8 +267,12 @@ export function useScriptLock(
               setLockedBy({ id: newLock.locked_by, name: 'Unknown User' })
             }
           } else if (payload.eventType === 'DELETE') {
-            // Lock released - attempt re-acquisition
-            acquireLock()
+            // Lock released - check if it was intentional before re-acquiring
+            // Intentional unlocks: manual unlock, force unlock, unmount cleanup
+            // Only re-acquire if lock was lost unexpectedly (e.g., heartbeat failure, other user takeover)
+            if (!isIntentionalUnlockRef.current) {
+              acquireLock()
+            }
           }
         }
       )
