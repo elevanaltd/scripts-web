@@ -328,11 +328,53 @@ jobs:
             echo "✅ Preview branch found, proceeding with integration tests..."
 
             # Get preview branch environment for current PR
-            # This exports: SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.
-            supabase --experimental branches get "$BRANCH_NAME" --project-ref "$SUPABASE_PROJECT_ID" -o env >> $GITHUB_ENV
+            # FIX: Use JSON output + jq parsing to avoid double-quoted values
+            # Critical-Engineer: consulted for Deployment pipeline (Supabase preview env parity)
+            # Issue: -o env wraps values in quotes per godotenv.Marshal, causing ""https://...""
+            # Solution: -o json + jq -r extracts bare values, compatible with Ubuntu runner jq 1.6
+            BRANCH_JSON=$(supabase --experimental branches get "$BRANCH_NAME" --project-ref "$SUPABASE_PROJECT_ID" -o json)
 
-            echo "✅ Preview environment variables exported"
-            echo "Preview URL: ${{ env.SUPABASE_URL }}"
+            # Validate JSON response before extraction
+            if [ -z "$BRANCH_JSON" ] || [ "$BRANCH_JSON" = "null" ]; then
+              echo "❌ Failed to retrieve preview branch details"
+              exit 1
+            fi
+
+            # Debug: Show actual JSON structure for field name validation
+            # Code-review-specialist: Field name verification for Supabase CLI compatibility
+            echo "=== Preview Branch JSON Response ==="
+            echo "$BRANCH_JSON" | jq -r 'keys | join(", ")'
+            echo ""
+
+            # Extract and validate each field with null guards
+            SUPABASE_URL=$(echo "$BRANCH_JSON" | jq -r '.SUPABASE_URL // empty')
+            SUPABASE_ANON_KEY=$(echo "$BRANCH_JSON" | jq -r '.ANON_KEY // empty')
+            SUPABASE_SERVICE_ROLE_KEY=$(echo "$BRANCH_JSON" | jq -r '.SERVICE_ROLE_KEY // empty')
+            DB_URL=$(echo "$BRANCH_JSON" | jq -r '.DB_URL // empty')
+
+            # Fail fast if critical values missing
+            # Code-review-specialist: DB_URL required for seed step, validated here
+            if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ] || [ -z "$DB_URL" ]; then
+              echo "❌ Missing critical preview environment values"
+              echo "SUPABASE_URL: ${SUPABASE_URL:-<empty>}"
+              echo "ANON_KEY: ${SUPABASE_ANON_KEY:+<present>}"
+              echo "DB_URL: ${DB_URL:+<present>}"
+              exit 1
+            fi
+
+            # SERVICE_ROLE_KEY is optional - warn if missing but don't block
+            if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+              echo "⚠️  SERVICE_ROLE_KEY not present (test user creation may fail)"
+            fi
+
+            # Export to GitHub environment
+            echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
+            echo "SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY" >> $GITHUB_ENV
+            echo "SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY" >> $GITHUB_ENV
+            echo "DB_URL=$DB_URL" >> $GITHUB_ENV
+
+            echo "✅ Preview environment variables exported (JSON-parsed, quote-safe)"
+            echo "Preview URL: $SUPABASE_URL"
           else
             echo "⚠️  No preview branch exists for '$BRANCH_NAME'"
             echo "Possible reasons:"
@@ -370,28 +412,20 @@ jobs:
         run: |
           echo "=== Seeding preview branch with baseline test data ==="
 
-          # Check if preview branch exists first (same logic as export step)
-          BRANCH_NAME="${{ github.head_ref }}"
-
-          if ! supabase --experimental branches list --project-ref "$SUPABASE_PROJECT_ID" 2>&1 | grep -q "$BRANCH_NAME"; then
-            echo "⚠️  No preview branch exists for '$BRANCH_NAME' - skipping seed step"
+          # Check if DB_URL was exported in previous step
+          # FIX: Use exported DB_URL from JSON parsing (already quote-safe)
+          if [ -z "${{ env.DB_URL }}" ]; then
+            echo "⚠️  No preview database URL available - skipping seed step"
             echo "Reason: Preview branch integration may not be configured OR no schema changes triggered preview creation"
             exit 0
           fi
 
-          # Get preview branch connection string
-          PREVIEW_DB_URL=$(supabase --experimental branches get "$BRANCH_NAME" --project-ref "$SUPABASE_PROJECT_ID" -o env | grep "^DB_URL=" | cut -d "=" -f 2-)
+          PREVIEW_DB_URL="${{ env.DB_URL }}"
 
-          if [ -z "$PREVIEW_DB_URL" ]; then
-            echo "⚠️  Could not get preview database URL (preview may have been skipped)"
-            echo "Branch: $BRANCH_NAME"
-            echo "Project: $SUPABASE_PROJECT_ID"
-            echo "Reason: No schema changes in this PR (Supabase skips preview creation when migrations unchanged)"
-            echo "✅ Skipping seed step gracefully - no preview environment to seed"
-            exit 0
-          fi
-
-          echo "Preview DB: ${PREVIEW_DB_URL:0:50}..."
+          # SECURITY: Mask password in connection string for logs
+          # Code-review-specialist: BLOCKING security issue - prevents password exposure
+          MASKED_URL=$(echo "$PREVIEW_DB_URL" | sed 's/:\/\/[^:]*:[^@]*@/:\/\/***:***@/')
+          echo "Preview DB: ${MASKED_URL}"
 
           # Execute seed.sql against preview database
           psql "$PREVIEW_DB_URL" < supabase/seed.sql
