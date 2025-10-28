@@ -46,6 +46,11 @@ export function useScriptLock(
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
 
+  // Ref pattern from Supabase + React best practices:
+  // Mirror currentUserId in ref to avoid stale closures in realtime handlers
+  // Research: https://supabase.com/docs + React closure patterns
+  const currentUserIdRef = useRef<string | null>(null)
+
   // Get current user ID for ownership checks
   useEffect(() => {
     // Guard against incomplete client mocks (e.g., test environments without auth)
@@ -55,9 +60,16 @@ export function useScriptLock(
     }
 
     client.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id || null)
+      const userId = data.user?.id || null
+      setCurrentUserId(userId)
+      currentUserIdRef.current = userId // Keep ref in sync
     })
   }, [client])
+
+  // Sync ref whenever state changes (defensive)
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId
+  }, [currentUserId])
 
   // Auto-lock on mount
   const acquireLock = useCallback(async () => {
@@ -213,10 +225,12 @@ export function useScriptLock(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
 
-            // FIX: Check ownership to prevent realtime events from overwriting 'acquired' status
-            // Error-architect: Distinguish between "I have lock" vs "someone else has lock"
+            // FIX: Read from ref to get current user ID without stale closure
+            // Pattern from deep-research: Refs always have latest value in async handlers
             // Database column is 'locked_by' (UUID), not 'locked_by_id'
-            if (newLock.locked_by === currentUserId) {
+            const currentUser = currentUserIdRef.current
+
+            if (newLock.locked_by === currentUser) {
               // Current user has the lock - confirm acquisition
               setLockStatus('acquired')
               // Don't update lockedBy - already set correctly by acquireLock
@@ -240,7 +254,11 @@ export function useScriptLock(
     return () => {
       client.removeChannel(channel)
     }
-  }, [scriptId, acquireLock, client, currentUserId])
+    // Dependencies: stable subscription based on scriptId only
+    // acquireLock is stable (useCallback), client should be stable
+    // DO NOT include currentUserId - would cause resubscription loop
+    // Handler reads from currentUserIdRef which is always current
+  }, [scriptId, acquireLock, client])
 
   return {
     lockStatus,
