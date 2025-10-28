@@ -67,7 +67,7 @@ function resolveSupabaseConfig(): { url: string; anonKey: string } {
   // Validate resolved URL
   try {
     new URL(url) // Will throw if invalid
-  } catch (error) {
+  } catch {
     throw new Error(
       `Failed to resolve valid Supabase URL. Resolved: "${url}". ` +
         `This indicates a configuration issue. ` +
