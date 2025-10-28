@@ -293,138 +293,98 @@ describe('useScriptLock (integration)', () => {
 
   // TEST 7: Realtime lock acquisition detection
   it('should update lock status when another user acquires lock', async () => {
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
-
-    await waitFor(
-      () => {
-        expect(result.current.lockStatus).toBe('acquired')
-      },
-      { timeout: 10000 }
+    // 1. Admin acquires lock
+    const { result: adminResult, unmount: adminUnmount } = renderHook(() =>
+      useScriptLock(TEST_SCRIPT_ID, testSupabase)
     )
+    await waitFor(() => expect(adminResult.current.lockStatus).toBe('acquired'),
+      { timeout: 10000 })
 
-    // Simulate another user acquiring lock (admin force-override via direct DB write)
+    // 2. Client hook starts (sees admin has lock)
     await authDelay()
-    const clientUserId = await signInAsTestUser(testSupabase, 'client')
-
-    // FIX RLS: Switch back to admin to manipulate locks (only lock holder or admin can delete)
-    // Critical-engineer: Use admin session for DB manipulation, hook continues as original user
-    await signInAsTestUser(testSupabase, 'admin')
-
-    // Delete existing lock and create new one for client
-    await testSupabase.from('script_locks').delete().eq('script_id', TEST_SCRIPT_ID)
-
-    await testSupabase.from('script_locks').insert({
-      script_id: TEST_SCRIPT_ID,
-      locked_by: clientUserId,
-      last_heartbeat: new Date().toISOString(),
-    })
-
-    // Realtime subscription should detect change
-    await waitFor(
-      () => {
-        expect(result.current.lockStatus).toBe('locked')
-        expect(result.current.lockedBy?.name).toContain('Client')
-      },
-      { timeout: 10000 }
+    await signInAsTestUser(testSupabase, 'client')
+    const { result: clientResult, unmount: clientUnmount } = renderHook(() =>
+      useScriptLock(TEST_SCRIPT_ID, testSupabase)
     )
 
-    unmount()
+    // 3. Client should see status='locked' (admin has it)
+    await waitFor(() => {
+      expect(clientResult.current.lockStatus).toBe('locked')
+      expect(clientResult.current.lockedBy?.name).toContain('Admin')
+    }, { timeout: 10000 })
+
+    adminUnmount()
+    clientUnmount()
   }, 20000)
 
   // TEST 8: Realtime lock release detection
   it('should update lock status when lock is released', async () => {
-    // FIX RLS: Start as admin to create lock record
-    // Critical-engineer: Use admin session for DB manipulation
-    await signInAsTestUser(testSupabase, 'admin')
-
-    // Get client user ID for lock ownership
-    await authDelay()
-    const clientUserId = await signInAsTestUser(testSupabase, 'client')
-
-    // Switch back to admin to insert lock
-    await authDelay()
-    await signInAsTestUser(testSupabase, 'admin')
-
-    await testSupabase.from('script_locks').insert({
-      script_id: TEST_SCRIPT_ID,
-      locked_by: clientUserId,
-      last_heartbeat: new Date().toISOString(),
-    })
-
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
-
-    // Should initially see as locked
-    await waitFor(
-      () => {
-        expect(result.current.lockStatus).toBe('locked')
-      },
-      { timeout: 10000 }
+    // 1. Admin acquires lock
+    const { result: adminResult, unmount: adminUnmount } = renderHook(() =>
+      useScriptLock(TEST_SCRIPT_ID, testSupabase)
     )
+    await waitFor(() => expect(adminResult.current.lockStatus).toBe('acquired'),
+      { timeout: 10000 })
 
-    // Release the lock (simulate other user unlocking) - admin can delete any lock
-    await testSupabase.from('script_locks').delete().eq('script_id', TEST_SCRIPT_ID)
-
-    // Should detect release and attempt re-acquisition
-    await waitFor(
-      () => {
-        expect(result.current.lockStatus).toBe('acquired')
-      },
-      { timeout: 15000 }
+    // 2. Client starts, sees admin's lock
+    await authDelay()
+    await signInAsTestUser(testSupabase, 'client')
+    const { result: clientResult, unmount: clientUnmount } = renderHook(() =>
+      useScriptLock(TEST_SCRIPT_ID, testSupabase)
     )
+    await waitFor(() => expect(clientResult.current.lockStatus).toBe('locked'),
+      { timeout: 10000 })
 
-    unmount()
-  }, 20000)
+    // 3. Admin releases lock (intentional unlock)
+    await adminResult.current.releaseLock()
+
+    // 4. Client should auto-acquire after admin releases
+    await waitFor(() => {
+      expect(clientResult.current.lockStatus).toBe('acquired')
+    }, { timeout: 15000 })
+
+    adminUnmount()
+    clientUnmount()
+  }, 25000)
 
   // TEST 9: Admin force unlock
   it('should allow admin to force-unlock', async () => {
-    // FIX RLS: Start as admin to create lock record
-    // Critical-engineer: Use admin session for DB manipulation
-    await signInAsTestUser(testSupabase, 'admin')
-
-    // Get client user ID for lock ownership
-    await authDelay()
-    const clientUserId = await signInAsTestUser(testSupabase, 'client')
-
-    // Switch back to admin to insert lock
-    await authDelay()
-    await signInAsTestUser(testSupabase, 'admin')
-
-    await testSupabase.from('script_locks').insert({
-      script_id: TEST_SCRIPT_ID,
-      locked_by: clientUserId,
-      last_heartbeat: new Date().toISOString(),
-    })
-
-    const { result, unmount } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
-
-    await waitFor(
-      () => {
-        expect(result.current.lockStatus).toBe('locked')
-      },
-      { timeout: 10000 }
+    // 1. Client acquires lock
+    await signInAsTestUser(testSupabase, 'client')
+    const { result: clientResult, unmount: clientUnmount } = renderHook(() =>
+      useScriptLock(TEST_SCRIPT_ID, testSupabase)
     )
+    await waitFor(() => expect(clientResult.current.lockStatus).toBe('acquired'),
+      { timeout: 10000 })
 
-    // Admin force unlock
-    await result.current.forceUnlock()
-
-    // Lock should be released
-    await waitFor(
-      async () => {
-        const { data } = await testSupabase
-          .from('script_locks')
-          .select('*')
-          .eq('script_id', TEST_SCRIPT_ID)
-          .maybeSingle()
-
-        expect(data).toBeNull()
-      },
-      { timeout: 5000 }
+    // 2. Admin sees client's lock
+    await authDelay()
+    await signInAsTestUser(testSupabase, 'admin')
+    const { result: adminResult, unmount: adminUnmount } = renderHook(() =>
+      useScriptLock(TEST_SCRIPT_ID, testSupabase)
     )
+    await waitFor(() => expect(adminResult.current.lockStatus).toBe('locked'),
+      { timeout: 10000 })
 
-    expect(result.current.lockStatus).toBe('unlocked')
+    // 3. Admin force-unlocks
+    await adminResult.current.forceUnlock()
 
-    unmount()
-  }, 15000)
+    // 4. Lock should be deleted (verify in database)
+    await waitFor(async () => {
+      const { data } = await testSupabase
+        .from('script_locks')
+        .select('*')
+        .eq('script_id', TEST_SCRIPT_ID)
+        .maybeSingle()
+      expect(data).toBeNull()
+    }, { timeout: 5000 })
+
+    // 5. Admin status should be unlocked (admin chose not to acquire after force-unlock)
+    expect(adminResult.current.lockStatus).toBe('unlocked')
+
+    adminUnmount()
+    clientUnmount()
+  }, 20000)
 
   // TEST 10: Race condition prevention (critical-engineer requirement)
   it('should prevent concurrent lock acquisitions', async () => {
