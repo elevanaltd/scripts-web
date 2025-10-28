@@ -51,6 +51,11 @@ export function useScriptLock(
   // Research: https://supabase.com/docs + React closure patterns
   const currentUserIdRef = useRef<string | null>(null)
 
+  // Mirror lockStatus in ref to avoid stale closures in unmount cleanup
+  // TMG Root Cause Analysis: Unmount cleanup closure captured lockStatus='checking'
+  // Pattern: Same ref strategy as currentUserIdRef (lines 52-76)
+  const lockStatusRef = useRef<'acquired' | 'locked' | 'checking' | 'unlocked'>('checking')
+
   // Track intentional unlocks to prevent false re-acquisition
   // When user manually unlocks or component unmounts, we should NOT re-acquire
   const isIntentionalUnlockRef = useRef(false)
@@ -74,6 +79,11 @@ export function useScriptLock(
   useEffect(() => {
     currentUserIdRef.current = currentUserId
   }, [currentUserId])
+
+  // Sync lockStatus ref whenever state changes
+  useEffect(() => {
+    lockStatusRef.current = lockStatus
+  }, [lockStatus])
 
   // Auto-lock on mount
   const acquireLock = useCallback(async () => {
@@ -193,7 +203,11 @@ export function useScriptLock(
       // Mark as intentional unlock (unmount cleanup)
       isIntentionalUnlockRef.current = true
 
-      if (scriptId && lockStatus === 'acquired') {
+      // FIX Test 5: Read from ref to avoid stale closure
+      // TMG Analysis: Closure captured lockStatus='checking' at mount time
+      // By unmount, status is 'acquired' but closure has old value → DELETE never fires
+      // Pattern: Same ref pattern as currentUserIdRef (lines 52, 262)
+      if (scriptId && lockStatusRef.current === 'acquired') {
         scriptLocksTable(client).delete().eq('script_id', scriptId)
       }
 
@@ -245,7 +259,7 @@ export function useScriptLock(
           table: 'script_locks',
           filter: `script_id=eq.${scriptId}`,
         },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
@@ -261,10 +275,19 @@ export function useScriptLock(
               // Don't update lockedBy - already set correctly by acquireLock
             } else {
               // Another user has the lock
+              // FIX Tests 7-9: Realtime payload only has UUID, need to fetch display_name
+              // Query user_profiles to get actual name for lockedBy display
+              const { data: userProfile } = await client
+                .from('user_profiles')
+                .select('display_name')
+                .eq('id', newLock.locked_by)
+                .maybeSingle()
+
               setLockStatus('locked')
-              // Realtime payload only has UUID in locked_by column
-              // We don't get name from realtime (would need join in view/function)
-              setLockedBy({ id: newLock.locked_by, name: 'Unknown User' })
+              setLockedBy({
+                id: newLock.locked_by,
+                name: userProfile?.display_name || 'Unknown User'
+              })
             }
           } else if (payload.eventType === 'DELETE') {
             // Lock released - check if it was intentional before re-acquiring
