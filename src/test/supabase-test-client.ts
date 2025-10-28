@@ -30,28 +30,64 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../types/database.types'
 
-// Environment-aware Supabase URL
-// Priority: Preview branch (CI) > Vite env (local/CI) > Ultimate fallback
-// NOTE: Use 127.0.0.1 instead of localhost to avoid Node.js v22 + undici@5.29.0 fetch failures
-// See: https://github.com/nodejs/undici/issues/2219
-//
-// ARCHITECTURE NOTE: typeof window check removed (broken in jsdom environment)
-// Trust vite.config.ts as single source of truth for environment mapping:
-// - Local dev: vite.config.ts line 96 sets VITE_SUPABASE_URL to localhost
-// - CI quality-gates: vite.config.ts line 96 sets VITE_SUPABASE_URL to localhost
-// - CI preview: process.env.SUPABASE_PREVIEW_URL overrides (from GitHub Actions)
-const SUPABASE_URL =
-  process.env.SUPABASE_PREVIEW_URL || // CI: Preview branch
-  import.meta.env.VITE_SUPABASE_URL || // Vite provides this in both local and CI
-  'http://127.0.0.1:54321' // Ultimate fallback (undici fix)
+/**
+ * Sanitize environment variable value
+ * CI can inject literal string 'undefined', 'null', or empty string
+ * These should be treated as undefined for fallback logic
+ */
+function sanitizeEnvVar(value: string | undefined): string | undefined {
+  if (!value || value === 'undefined' || value === 'null' || value.trim() === '') {
+    return undefined
+  }
+  return value
+}
 
-// Environment-aware anon key
-// For local development, use the key from `supabase status`
-const SUPABASE_ANON_KEY =
-  process.env.SUPABASE_PREVIEW_ANON_KEY || // CI: Preview branch key
-  process.env.SUPABASE_ANON_KEY || // Local: From .env
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || // Fallback: Remote
-  'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH' // Local Supabase default from `supabase status`
+/**
+ * Resolve Supabase configuration with fallback chain
+ * Priority: Preview branch (CI) > Vite config > Localhost
+ *
+ * ARCHITECTURE NOTE:
+ * - CI quality-gates may inject string 'undefined' for unset env vars
+ * - Sanitizer normalizes invalid strings to actual undefined
+ * - URL validation ensures resolved config is valid
+ * - Use 127.0.0.1 instead of localhost (Node.js v22 + undici@5.29.0 fetch fix)
+ *   See: https://github.com/nodejs/undici/issues/2219
+ */
+function resolveSupabaseConfig(): { url: string; anonKey: string } {
+  // Sanitize all env sources
+  const previewUrl = sanitizeEnvVar(process.env.SUPABASE_PREVIEW_URL)
+  const previewKey = sanitizeEnvVar(process.env.SUPABASE_PREVIEW_ANON_KEY)
+  const viteUrl = sanitizeEnvVar(import.meta.env.VITE_SUPABASE_URL)
+  const viteKey = sanitizeEnvVar(import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY)
+
+  // Resolve URL with fallback chain
+  const url = previewUrl || viteUrl || 'http://127.0.0.1:54321'
+  const anonKey = previewKey || viteKey || 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH'
+
+  // Validate resolved URL
+  try {
+    new URL(url) // Will throw if invalid
+  } catch (error) {
+    throw new Error(
+      `Failed to resolve valid Supabase URL. Resolved: "${url}". ` +
+        `This indicates a configuration issue. ` +
+        `Check SUPABASE_PREVIEW_URL, VITE_SUPABASE_URL, or vite.config.ts`
+    )
+  }
+
+  // Log in CI for debugging
+  if (process.env.CI) {
+    console.log('[TEST CLIENT] Resolved Supabase config:', {
+      url,
+      anonKey: `${anonKey.slice(0, 20)}...`,
+    })
+  }
+
+  return { url, anonKey }
+}
+
+// Resolve configuration once at module load
+const { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY } = resolveSupabaseConfig()
 
 /**
  * Test Supabase client
