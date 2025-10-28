@@ -88,6 +88,9 @@ export default defineConfig(({ mode }) => {
       VITE_SMARTSUITE_WORKSPACE_ID: process.env.VITE_SMARTSUITE_WORKSPACE_ID,
       VITE_SMARTSUITE_PROJECTS_TABLE: process.env.VITE_SMARTSUITE_PROJECTS_TABLE,
       VITE_SMARTSUITE_VIDEOS_TABLE: process.env.VITE_SMARTSUITE_VIDEOS_TABLE,
+      // Non-VITE vars for Node.js test client (src/test/supabase-test-client.ts)
+      SUPABASE_PREVIEW_URL: process.env.SUPABASE_PREVIEW_URL,
+      SUPABASE_PREVIEW_ANON_KEY: process.env.SUPABASE_PREVIEW_ANON_KEY,
     } : {
       // Local: Use local Supabase Docker instance (seeded via supabase/seed.sql)
       VITE_SUPABASE_URL: 'http://127.0.0.1:54321',
