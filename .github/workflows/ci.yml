@@ -475,8 +475,12 @@ jobs:
 
           npm run test:integration -- --run
         env:
+          # Vite-prefixed vars (for browser/Vite code)
           VITE_SUPABASE_URL: ${{ env.SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ env.SUPABASE_ANON_KEY }}
+          # Non-prefixed vars (for Node.js test code - src/test/supabase-test-client.ts)
+          SUPABASE_PREVIEW_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_PREVIEW_ANON_KEY: ${{ env.SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ env.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Upload test results
