@@ -257,6 +257,12 @@ export function useScriptLock(
   useEffect(() => {
     if (!scriptId) return
 
+    console.log('[useScriptLock] Setting up realtime subscription:', {
+      scriptId,
+      channelName: `script_locks:${scriptId}`,
+      timestamp: new Date().toISOString()
+    })
+
     const channel = client
       .channel(`script_locks:${scriptId}`)
       .on(
@@ -268,6 +274,14 @@ export function useScriptLock(
           filter: `script_id=eq.${scriptId}`,
         },
         async (payload) => {
+          console.log('[useScriptLock] Realtime event received:', {
+            eventType: payload.eventType,
+            old: payload.old,
+            new: payload.new,
+            currentUserId: currentUserIdRef.current,
+            timestamp: new Date().toISOString()
+          })
+
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
@@ -277,20 +291,32 @@ export function useScriptLock(
             // Database column is 'locked_by' (UUID), not 'locked_by_id'
             const currentUser = currentUserIdRef.current
 
+            console.log('[useScriptLock] Processing INSERT/UPDATE:', {
+              lockedBy: newLock.locked_by,
+              currentUser,
+              isCurrentUser: newLock.locked_by === currentUser
+            })
+
             if (newLock.locked_by === currentUser) {
               // Current user has the lock - confirm acquisition
+              console.log('[useScriptLock] Setting status to acquired (current user owns lock)')
               setLockStatus('acquired')
               // Don't update lockedBy - already set correctly by acquireLock
             } else {
               // Another user has the lock
               // FIX Tests 7-9: Realtime payload only has UUID, need to fetch display_name
               // Query user_profiles to get actual name for lockedBy display
+              console.log('[useScriptLock] Fetching user profile for other user:', newLock.locked_by)
               const { data: userProfile } = await client
                 .from('user_profiles')
                 .select('display_name')
                 .eq('id', newLock.locked_by)
                 .maybeSingle()
 
+              console.log('[useScriptLock] Setting status to locked (other user owns lock):', {
+                lockedBy: newLock.locked_by,
+                displayName: userProfile?.display_name
+              })
               setLockStatus('locked')
               setLockedBy({
                 id: newLock.locked_by,
@@ -298,20 +324,33 @@ export function useScriptLock(
               })
             }
           } else if (payload.eventType === 'DELETE') {
+            console.log('[useScriptLock] Processing DELETE:', {
+              isIntentionalUnlock: isIntentionalUnlockRef.current
+            })
             // Lock released - check if it was intentional before re-acquiring
             // Intentional unlocks: manual unlock, force unlock, unmount cleanup
             // Only re-acquire if lock was lost unexpectedly (e.g., heartbeat failure, other user takeover)
             if (!isIntentionalUnlockRef.current) {
+              console.log('[useScriptLock] Unexpected DELETE - re-acquiring lock')
               acquireLock()
+            } else {
+              console.log('[useScriptLock] Intentional DELETE - skipping re-acquisition')
             }
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[useScriptLock] Subscription status changed:', {
+          status,
+          scriptId,
+          timestamp: new Date().toISOString()
+        })
+      })
 
     channelRef.current = channel
 
     return () => {
+      console.log('[useScriptLock] Cleaning up realtime subscription:', scriptId)
       client.removeChannel(channel)
     }
     // Dependencies: stable subscription based on scriptId only
