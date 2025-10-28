@@ -31,13 +31,18 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../types/database.types'
 
 // Environment-aware Supabase URL
-// Priority: Preview branch (CI) > Local (dev) > Remote (fallback)
+// Priority: Preview branch (CI) > Vite env (local/CI) > Ultimate fallback
 // NOTE: Use 127.0.0.1 instead of localhost to avoid Node.js v22 + undici@5.29.0 fetch failures
 // See: https://github.com/nodejs/undici/issues/2219
+//
+// ARCHITECTURE NOTE: typeof window check removed (broken in jsdom environment)
+// Trust vite.config.ts as single source of truth for environment mapping:
+// - Local dev: vite.config.ts line 96 sets VITE_SUPABASE_URL to localhost
+// - CI quality-gates: vite.config.ts line 96 sets VITE_SUPABASE_URL to localhost
+// - CI preview: process.env.SUPABASE_PREVIEW_URL overrides (from GitHub Actions)
 const SUPABASE_URL =
   process.env.SUPABASE_PREVIEW_URL || // CI: Preview branch
-  (typeof window === 'undefined' ? 'http://127.0.0.1:54321' : undefined) || // Local: 127.0.0.1 (undici fix)
-  import.meta.env.VITE_SUPABASE_URL || // Fallback: Remote
+  import.meta.env.VITE_SUPABASE_URL || // Vite provides this in both local and CI
   'http://127.0.0.1:54321' // Ultimate fallback (undici fix)
 
 // Environment-aware anon key
