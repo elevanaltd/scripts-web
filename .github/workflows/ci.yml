@@ -347,10 +347,11 @@ jobs:
             echo ""
 
             # Extract and validate each field with null guards
+            # Field names from actual Supabase CLI JSON output (verified in logs)
             SUPABASE_URL=$(echo "$BRANCH_JSON" | jq -r '.SUPABASE_URL // empty')
-            SUPABASE_ANON_KEY=$(echo "$BRANCH_JSON" | jq -r '.ANON_KEY // empty')
-            SUPABASE_SERVICE_ROLE_KEY=$(echo "$BRANCH_JSON" | jq -r '.SERVICE_ROLE_KEY // empty')
-            DB_URL=$(echo "$BRANCH_JSON" | jq -r '.DB_URL // empty')
+            SUPABASE_ANON_KEY=$(echo "$BRANCH_JSON" | jq -r '.SUPABASE_ANON_KEY // empty')
+            SUPABASE_SERVICE_ROLE_KEY=$(echo "$BRANCH_JSON" | jq -r '.SUPABASE_SERVICE_ROLE_KEY // empty')
+            DB_URL=$(echo "$BRANCH_JSON" | jq -r '.POSTGRES_URL // empty')
 
             # Fail fast if critical values missing
             # Code-review-specialist: DB_URL required for seed step, validated here
