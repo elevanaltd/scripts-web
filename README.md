@@ -43,10 +43,28 @@ TipTap editor with Y.js realtime collaboration, comment system with position tra
 
 ## Local Development
 
+### Initial Setup
+
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
 
+# 2. Configure environment (REQUIRED)
+cp .env.example .env
+# Edit .env with your configuration
+# See "Environment Configuration" section below
+
+# 3. Verify configuration
+./scripts/validate-env.sh
+# ✓ Should pass before first commit
+
+# 4. Run dev server
+npm run dev
+```
+
+### Daily Workflow
+
+```bash
 # Run dev server
 npm run dev
 
@@ -57,7 +75,58 @@ npm run test
 npm run typecheck
 npm run lint
 npm run build
+
+# Validate environment (manual)
+./scripts/validate-env.sh
 ```
+
+### Environment Configuration
+
+**IMPORTANT**: This project uses **validated environment configuration** to prevent runtime errors.
+
+**Configuration File**: `.env` (copy from `.env.example`)
+
+**Automatic Validation**: Pre-commit hook validates `.env` before every commit
+- ✓ Valid config → Commit allowed
+- ✗ Invalid config → Commit blocked with clear error message
+
+**Required Variables**:
+```bash
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+VITE_DEBUG_MODE=false  # optional
+```
+
+**Manual Validation**:
+```bash
+# Validate current .env
+./scripts/validate-env.sh
+
+# Validate specific file
+./scripts/validate-env.sh .env.production
+```
+
+**Troubleshooting**:
+```bash
+# If commit is blocked:
+✗ Environment validation failed
+VITE_SUPABASE_URL: VITE_SUPABASE_URL must be a valid URL
+
+# 1. Check your .env file
+cat .env
+
+# 2. Compare with .env.example
+cat .env.example
+
+# 3. Fix the invalid variable
+vim .env
+
+# 4. Retry commit
+git commit -m "your message"
+✓ Environment validation passed
+```
+
+**Architecture**: See [ADR-006](.coord/docs/005-DOC-ADR-006-ENVIRONMENT-CONFIGURATION-PREVENTION.md) for full details
 
 ---
 

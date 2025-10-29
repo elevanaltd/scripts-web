@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+###############################################################################
+# Husky Pre-Commit Hook
+#
+# Purpose: Prevent commits with invalid environment configuration
+# Prevents: PR #22 pattern (21 commits for env config issues)
+#
+# Validation Steps:
+# 1. Environment configuration validation (scripts/validate-env.sh)
+#
+# Exit codes:
+#   0 - All checks passed (commit allowed)
+#   Non-zero - Validation failed (commit blocked)
+###############################################################################
+
+# Run environment validation
+./scripts/validate-env.sh
+
+# Exit code is automatically propagated
+# If validation fails, commit is blocked

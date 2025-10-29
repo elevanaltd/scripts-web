@@ -62,6 +62,11 @@ export default defineConfig(({ mode }) => {
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     css: true,
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      'scripts/**/*.test.mjs',  // Node.js native tests (node:test), not Vitest
+    ],
 
     // Memory optimization: Limit worker threads to prevent RAM exhaustion
     // Without this, Vitest spawns workers equal to CPU cores (often 12+)
