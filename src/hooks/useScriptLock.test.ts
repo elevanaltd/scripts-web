@@ -457,6 +457,21 @@ describe('useScriptLock (integration)', () => {
     // (Handles race condition from previous test's async unmount cleanup)
     await cleanupTestData(adminClient)
 
+    // Verify cleanup actually worked (TMG Investigation Protocol)
+    const { data: existingLocks } = await adminClient
+      .from('script_locks')
+      .select('*')
+      .eq('script_id', TEST_SCRIPT_ID)
+
+    console.log('[Test 10] Pre-test lock state:', {
+      locksFound: existingLocks?.length ?? 0,
+      locks: existingLocks
+    })
+
+    if (existingLocks && existingLocks.length > 0) {
+      console.error('[Test 10] ERROR: Locks still exist after cleanup!', existingLocks)
+    }
+
     const { result: result1, unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, adminClient))
 
     await waitFor(

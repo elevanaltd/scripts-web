@@ -179,12 +179,18 @@ export async function cleanupTestData(client: SupabaseClient<Database>) {
   await client.from('script_locks').delete().neq('script_id', '')
 
   // Wait for deletion to actually complete (handles async unmount race conditions)
+  // Extended to 3s (30 retries × 100ms) for CI propagation delays
   let retries = 0
-  while (retries < 10) {
+  while (retries < 30) {
     const { data } = await client.from('script_locks').select('script_id').limit(1).maybeSingle()
     if (!data) break
     await new Promise((resolve) => setTimeout(resolve, 100))
     retries++
+  }
+
+  // Warn if cleanup polling timed out
+  if (retries >= 30) {
+    console.warn('[cleanupTestData] Cleanup polling timeout - locks may still exist')
   }
 
   // Note: Preview branches are ephemeral, so cleanup is optional
