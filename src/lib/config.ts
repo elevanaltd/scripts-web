@@ -81,8 +81,8 @@ export function loadConfig(): Readonly<Config> {
     return deepFreeze(config)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const missingVars = (error.errors || []).map((e) => e.path.join('.')).join(', ')
-      const errorDetails = (error.errors || [])
+      const missingVars = (error.issues || []).map((e) => e.path.join('.')).join(', ')
+      const errorDetails = (error.issues || [])
         .map((e) => `  - ${e.path.join('.')}: ${e.message}`)
         .join('\n')
       throw new Error(
