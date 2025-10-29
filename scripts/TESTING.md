@@ -114,7 +114,7 @@ Exit code: 0
 ### Exit Codes Verified
 - ✅ Exit code 0: Validation passed (ready to commit)
 - ✅ Exit code 1: Validation failed (block commit)
-- ✅ Exit code 2: Not tested yet (would require removing Node.js)
+- ✅ Exit code 2: Script error - tested with PATH="" (missing Node.js detection works)
 
 ### Error Message Quality
 - ✅ Clear, actionable error messages
