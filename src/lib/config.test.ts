@@ -69,8 +69,9 @@ describe('config loader', () => {
       }).toThrow()
 
       expect(() => {
-        // @ts-expect-error - testing runtime immutability
-        config.supabase.url = 'https://hacker.com'
+        // Testing runtime immutability (Object.freeze prevents mutation)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ;(config.supabase as any).url = 'https://hacker.com'
       }).toThrow()
     })
   })

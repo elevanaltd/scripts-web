@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { envSchemaWithTransforms } from './env-schema.mjs'
 
 /**
  * TDD Phase: REFACTOR
@@ -9,28 +10,10 @@ import { z } from 'zod'
  * Strategy: Fail-fast at startup with clear error messages
  *
  * Implementation: Tests 100% passing (11/11) - refactoring for clarity
- */
-
-/**
- * Zod schema for environment variable validation.
  *
- * Exported for use in pre-commit validation hooks (validate-env.mjs).
- * Ensures consistent validation between runtime and pre-commit checks.
+ * Architecture: Imports shared schema from env-schema.mjs (single source of truth)
+ * Prevents schema drift between runtime and pre-commit validation
  */
-export const envSchema = z.object({
-  VITE_SUPABASE_URL: z
-    .string()
-    .url({ message: 'VITE_SUPABASE_URL must be a valid URL' })
-    .min(1, 'VITE_SUPABASE_URL is required'),
-  VITE_SUPABASE_PUBLISHABLE_KEY: z
-    .string()
-    .min(1, 'VITE_SUPABASE_PUBLISHABLE_KEY is required'),
-  VITE_DEBUG_MODE: z
-    .string()
-    .optional()
-    .default('false')
-    .transform((val) => val === 'true'),
-})
 
 // Configuration type derived from schema
 type Config = {
@@ -44,12 +27,12 @@ type Config = {
 /**
  * Deep freeze an object to prevent mutations at all levels.
  */
-function deepFreeze<T>(obj: T): Readonly<T> {
+function deepFreeze<T extends Record<string, unknown>>(obj: T): Readonly<T> {
   Object.freeze(obj)
   Object.getOwnPropertyNames(obj).forEach((prop) => {
-    const value = (obj as any)[prop]
+    const value = obj[prop]
     if (value && typeof value === 'object') {
-      deepFreeze(value)
+      deepFreeze(value as Record<string, unknown>)
     }
   })
   return obj
@@ -63,7 +46,7 @@ function deepFreeze<T>(obj: T): Readonly<T> {
  */
 export function loadConfig(): Readonly<Config> {
   try {
-    const env = envSchema.parse({
+    const env = envSchemaWithTransforms.parse({
       VITE_SUPABASE_URL: import.meta.env.VITE_SUPABASE_URL,
       VITE_SUPABASE_PUBLISHABLE_KEY: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
       VITE_DEBUG_MODE: import.meta.env.VITE_DEBUG_MODE,

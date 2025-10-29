@@ -19,24 +19,17 @@
 
 import { readFileSync, existsSync } from 'node:fs'
 import { z } from 'zod'
+import { envSchema } from '../src/lib/env-schema.mjs'
 
 /**
- * Zod schema for environment validation.
+ * Shared environment schema imported from env-schema.mjs.
  *
- * NOTE: This mirrors src/lib/config.ts schema but without transformations
- * to ensure validation errors are properly reported.
- * Transformations only needed at runtime, not during pre-commit validation.
+ * Architecture: Single source of truth for validation rules
+ * Prevents schema drift between runtime config and pre-commit validation
+ *
+ * Uses raw schema (no transformations) for actionable error messages
+ * during pre-commit validation.
  */
-const envSchema = z.object({
-  VITE_SUPABASE_URL: z
-    .string({ required_error: 'VITE_SUPABASE_URL is required' })
-    .url({ message: 'VITE_SUPABASE_URL must be a valid URL' })
-    .min(1, 'VITE_SUPABASE_URL cannot be empty'),
-  VITE_SUPABASE_PUBLISHABLE_KEY: z
-    .string({ required_error: 'VITE_SUPABASE_PUBLISHABLE_KEY is required' })
-    .min(1, 'VITE_SUPABASE_PUBLISHABLE_KEY cannot be empty'),
-  VITE_DEBUG_MODE: z.string().optional(),
-})
 
 /**
  * Parse .env file into key-value object.
