@@ -208,7 +208,15 @@ export async function createTestUserClient(
 ): Promise<SupabaseClient<Database>> {
   await authDelay()
 
-  const client = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY)
+  // ✅ Unique storage key per user role prevents collision
+  // Each test user gets isolated auth storage to avoid session conflicts
+  // in multi-user tests where multiple clients need simultaneous subscriptions
+  const client = createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      storageKey: `test-${userType}`, // Unique: "test-admin", "test-client"
+      persistSession: false, // Don't persist test sessions across runs
+    },
+  })
 
   const { email, password } = TEST_USERS[userType]
   const { data, error } = await client.auth.signInWithPassword({ email, password })

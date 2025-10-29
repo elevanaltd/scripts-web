@@ -442,7 +442,11 @@ describe('useScriptLock (integration)', () => {
     // This test validates database-level UNIQUE constraint prevents dual ownership
     // Admin acquires first, client (different user) should be blocked
 
-    const { result: result1, unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
+    // Use separate client instances to maintain isolated sessions
+    const adminClient = await createTestUserClient('admin')
+    const clientClient = await createTestUserClient('client')
+
+    const { result: result1, unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, adminClient))
 
     await waitFor(
       () => {
@@ -451,11 +455,8 @@ describe('useScriptLock (integration)', () => {
       { timeout: 10000 }
     )
 
-    // Switch to different user for concurrent acquisition attempt
-    await authDelay()
-    await signInAsTestUser(testSupabase, 'client')
-
-    const { result: result2, unmount: unmount2 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, testSupabase))
+    // Client attempts concurrent acquisition (should fail due to UNIQUE constraint)
+    const { result: result2, unmount: unmount2 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, clientClient))
 
     await waitFor(
       () => {
@@ -475,5 +476,7 @@ describe('useScriptLock (integration)', () => {
 
     unmount1()
     unmount2()
+    await adminClient.auth.signOut()
+    await clientClient.auth.signOut()
   }, 20000)
 })
