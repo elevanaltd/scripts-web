@@ -442,9 +442,20 @@ describe('useScriptLock (integration)', () => {
     // This test validates database-level UNIQUE constraint prevents dual ownership
     // Admin acquires first, client (different user) should be blocked
 
+    // Sign out testSupabase to prevent interference from beforeEach's admin session
+    await testSupabase.auth.signOut()
+    await authDelay()
+
     // Use separate client instances to maintain isolated sessions
     const adminClient = await createTestUserClient('admin')
     const clientClient = await createTestUserClient('client')
+
+    // Ensure auth is fully propagated
+    await authDelay()
+
+    // Explicitly clean up any existing lock before starting
+    // (Handles race condition from previous test's async unmount cleanup)
+    await cleanupTestData(adminClient)
 
     const { result: result1, unmount: unmount1 } = renderHook(() => useScriptLock(TEST_SCRIPT_ID, adminClient))
 
