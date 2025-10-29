@@ -1,9 +1,18 @@
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import { getConfig } from '../lib/config';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+/**
+ * POC Migration: Using config loader instead of direct env access
+ *
+ * Benefits:
+ * - Validated configuration at startup (fail-fast)
+ * - Single source of truth for config
+ * - Type-safe access to configuration
+ * - Immutable config prevents runtime mutations
+ */
+const config = getConfig();
+const supabase = createClient(config.supabase.url, config.supabase.publishableKey);
 
 export function TestRLS() {
   const [result, setResult] = useState<string>('');
