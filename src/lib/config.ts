@@ -1,18 +1,23 @@
 import { z } from 'zod'
 
 /**
- * TDD Phase: GREEN
+ * TDD Phase: REFACTOR
  *
  * Environment configuration loader with Zod validation.
  *
  * Purpose: Prevent PR #22 pattern (21 commits for env config issues)
  * Strategy: Fail-fast at startup with clear error messages
  *
- * Constitutional Requirement: Minimal implementation to pass tests
+ * Implementation: Tests 100% passing (11/11) - refactoring for clarity
  */
 
-// Zod schema for environment variables
-const envSchema = z.object({
+/**
+ * Zod schema for environment variable validation.
+ *
+ * Exported for use in pre-commit validation hooks (validate-env.mjs).
+ * Ensures consistent validation between runtime and pre-commit checks.
+ */
+export const envSchema = z.object({
   VITE_SUPABASE_URL: z
     .string()
     .url({ message: 'VITE_SUPABASE_URL must be a valid URL' })
