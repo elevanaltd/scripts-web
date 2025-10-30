@@ -29,24 +29,38 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../types/database.types'
+import { getConfig } from '../lib/config'
+
+/**
+ * Test-aware configuration loader
+ *
+ * Strategy: Preview env vars (CI) > Config loader (validated) > Local fallback
+ *
+ * Benefits:
+ * - Validated config prevents "fetch failed" errors
+ * - Preview branch support for CI (SUPABASE_PREVIEW_URL)
+ * - Type-safe access to configuration
+ * - Clear error messages when config is invalid
+ */
+
+// Load validated config as foundation
+const config = getConfig()
 
 // Environment-aware Supabase URL
-// Priority: Preview branch (CI) > Local (dev) > Remote (fallback)
+// Priority: Preview branch (CI) > Config loader (validated) > Local fallback
 // NOTE: Use 127.0.0.1 instead of localhost to avoid Node.js v22 + undici@5.29.0 fetch failures
 // See: https://github.com/nodejs/undici/issues/2219
 const SUPABASE_URL =
   process.env.SUPABASE_PREVIEW_URL || // CI: Preview branch
-  (typeof window === 'undefined' ? 'http://127.0.0.1:54321' : undefined) || // Local: 127.0.0.1 (undici fix)
-  import.meta.env.VITE_SUPABASE_URL || // Fallback: Remote
+  config.supabase.url || // Validated config
   'http://127.0.0.1:54321' // Ultimate fallback (undici fix)
 
 // Environment-aware anon key
-// For local development, use the key from `supabase status`
+// Priority: Preview branch (CI) > Config loader (validated) > Local fallback
 const SUPABASE_ANON_KEY =
   process.env.SUPABASE_PREVIEW_ANON_KEY || // CI: Preview branch key
-  process.env.SUPABASE_ANON_KEY || // Local: From .env
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || // Fallback: Remote
-  'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH' // Local Supabase default from `supabase status`
+  config.supabase.publishableKey || // Validated config
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' // Local Supabase default from `supabase status`
 
 /**
  * Test Supabase client
