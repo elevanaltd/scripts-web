@@ -44,9 +44,9 @@ export function useScriptLock(
   const isAcquiringRef = useRef(false)
   const isUnmountingRef = useRef(false)
   const isManualReleaseRef = useRef(false)
-  const currentUserIdRef = useRef<string | null>(null)
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const reacquisitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-lock on mount
   const acquireLock = useCallback(async () => {
@@ -151,11 +151,6 @@ export function useScriptLock(
   useEffect(() => {
     if (!scriptId) return
 
-    // Cache current user ID at mount time
-    client.auth.getUser().then(({ data: { user } }) => {
-      currentUserIdRef.current = user?.id || null
-    })
-
     acquireLock()
 
     // Cleanup on unmount
@@ -173,6 +168,12 @@ export function useScriptLock(
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current)
         heartbeatIntervalRef.current = null
+      }
+
+      // Clear any pending reacquisition timeout
+      if (reacquisitionTimeoutRef.current) {
+        clearTimeout(reacquisitionTimeoutRef.current)
+        reacquisitionTimeoutRef.current = null
       }
 
       // Delete lock LAST (after channel removed)
@@ -231,30 +232,52 @@ export function useScriptLock(
         },
         async (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            // Cancel any pending reacquisition attempts
+            if (reacquisitionTimeoutRef.current) {
+              clearTimeout(reacquisitionTimeoutRef.current)
+              reacquisitionTimeoutRef.current = null
+            }
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
 
-            // If this lock is held by current user, ignore (we already updated state in acquireLock)
-            if (currentUserIdRef.current && newLock.locked_by === currentUserIdRef.current) {
-              return
+            // Fetch lock holder's name and current user ID
+            const [profileResult, userResult] = await Promise.all([
+              client.from('user_profiles').select('display_name').eq('id', newLock.locked_by).maybeSingle(),
+              client.auth.getUser()
+            ])
+
+            const currentUserId = userResult.data.user?.id
+            const isOwnLock = currentUserId === newLock.locked_by
+
+            if (isOwnLock) {
+              // This is our own lock acquisition
+              setLockStatus('acquired')
+              setLockedBy({
+                id: newLock.locked_by,
+                name: profileResult.data?.display_name || 'Unknown User'
+              })
+            } else {
+              // Lock is held by another user
+              setLockStatus('locked')
+              setLockedBy({
+                id: newLock.locked_by,
+                name: profileResult.data?.display_name || 'Unknown User'
+              })
             }
-
-            // Fetch lock holder's name from user_profiles (payload only has locked_by UUID)
-            const { data: profile } = await client
-              .from('user_profiles')
-              .select('display_name')
-              .eq('id', newLock.locked_by)
-              .maybeSingle()
-
-            setLockStatus('locked')
-            setLockedBy({
-              id: newLock.locked_by,
-              name: profile?.display_name || 'Unknown User'
-            })
           } else if (payload.eventType === 'DELETE') {
-            // Lock released - attempt re-acquisition (unless it was a manual release by this user)
+            // Lock released - debounce re-acquisition to allow INSERT events to process first
+            // This prevents race conditions when lock is deleted then immediately re-inserted by another user
             if (!isManualReleaseRef.current) {
-              acquireLock()
+              // Clear any pending reacquisition
+              if (reacquisitionTimeoutRef.current) {
+                clearTimeout(reacquisitionTimeoutRef.current)
+              }
+
+              // Wait 100ms for potential INSERT event before attempting reacquisition
+              reacquisitionTimeoutRef.current = setTimeout(() => {
+                acquireLock()
+              }, 100)
             }
           }
         }
