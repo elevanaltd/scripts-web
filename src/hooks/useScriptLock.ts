@@ -44,6 +44,7 @@ export function useScriptLock(
   const isAcquiringRef = useRef(false)
   const isUnmountingRef = useRef(false)
   const isManualReleaseRef = useRef(false)
+  const currentUserIdRef = useRef<string | null>(null)
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
 
@@ -58,7 +59,7 @@ export function useScriptLock(
       const { data, error } = await acquireScriptLock(client, scriptId)
 
       if (error) {
-        console.error('Lock acquisition error:', error)
+        console.error('[useScriptLock] Lock acquisition error:', error)
         setLockStatus('locked')
         isAcquiringRef.current = false
         return
@@ -69,11 +70,12 @@ export function useScriptLock(
         setLockStatus('acquired')
         setLockedBy({ id: lockResult.locked_by_user_id, name: lockResult.locked_by_name })
       } else if (lockResult) {
+        console.log('[useScriptLock] Lock already held by:', lockResult.locked_by_name)
         setLockStatus('locked')
         setLockedBy({ id: lockResult.locked_by_user_id || '', name: lockResult.locked_by_name || 'Unknown' })
       }
     } catch (err) {
-      console.error('Lock acquisition failed:', err)
+      console.error('[useScriptLock] Lock acquisition failed:', err)
       setLockStatus('locked')
     } finally {
       isAcquiringRef.current = false
@@ -148,6 +150,11 @@ export function useScriptLock(
   // Initialize: Acquire lock on mount
   useEffect(() => {
     if (!scriptId) return
+
+    // Cache current user ID at mount time
+    client.auth.getUser().then(({ data: { user } }) => {
+      currentUserIdRef.current = user?.id || null
+    })
 
     acquireLock()
 
@@ -226,6 +233,11 @@ export function useScriptLock(
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
+
+            // If this lock is held by current user, ignore (we already updated state in acquireLock)
+            if (currentUserIdRef.current && newLock.locked_by === currentUserIdRef.current) {
+              return
+            }
 
             // Fetch lock holder's name from user_profiles (payload only has locked_by UUID)
             const { data: profile } = await client
