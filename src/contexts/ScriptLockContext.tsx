@@ -73,16 +73,17 @@ export function useScriptLockContext(): ScriptLockContextValue {
 /**
  * Provider that acquires lock and shares state with children
  *
- * @param scriptId - UUID of script to lock
+ * @param scriptId - UUID of script to lock (undefined when no script selected)
  * @param children - Components that will consume lock state
  */
 interface ScriptLockProviderProps {
-  scriptId: string
+  scriptId: string | undefined
   children: ReactNode
 }
 
 export function ScriptLockProvider({ scriptId, children }: ScriptLockProviderProps) {
   // Single acquisition point - all children share this state
+  // When scriptId is undefined, useScriptLock returns unlocked state
   const lockState = useScriptLock(scriptId)
 
   return <ScriptLockContext.Provider value={lockState}>{children}</ScriptLockContext.Provider>

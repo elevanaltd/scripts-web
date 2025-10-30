@@ -39,13 +39,29 @@ import { loadScriptForVideo, ComponentData, ScriptWorkflowStatus, generateConten
 import { Logger } from '../services/logger';
 import { extractComponents as extractComponentsFromDoc } from '../lib/componentExtraction';
 import { sanitizeHTML, handlePlainTextPaste, convertPlainTextToHTML, validateDOMPurifyConfig } from '../lib/editor/sanitizeUtils';
-import { useScriptLock } from '../hooks/useScriptLock';
+import { ScriptLockProvider, useScriptLockContext } from '../contexts/ScriptLockContext';
 import { ScriptLockIndicator } from './ScriptLockIndicator';
 import './TipTapEditor.css';
 
 // Critical-Engineer: consulted for Security vulnerability assessment
 
+// PUBLIC API: TipTapEditor wraps ScriptLockProvider
+// TMG BLOCKER RESOLUTION: Single lock acquisition point prevents concurrent lock bug
 export const TipTapEditor: React.FC = () => {
+  const { currentScript } = useCurrentScript();
+
+  // Wrap internal component in ScriptLockProvider
+  // This ensures only ONE useScriptLock invocation per script
+  // ScriptLockProvider handles undefined scriptId gracefully
+  return (
+    <ScriptLockProvider scriptId={currentScript?.id}>
+      <TipTapEditorContent />
+    </ScriptLockProvider>
+  );
+};
+
+// INTERNAL: TipTapEditorContent uses context for lock state
+const TipTapEditorContent: React.FC = () => {
   // MITIGATION 1: Inline critical CSS to prevent FOUC (Flash of Unstyled Content)
   // Critical-Engineer: consulted for CSS FOUC risk mitigation (HIGH priority)
   // Ensures component labels (C1, C2, C3...) render correctly immediately on slow networks
@@ -91,7 +107,8 @@ export const TipTapEditor: React.FC = () => {
   const { toasts, showSuccess, showError } = useToast();
 
   // Script lock management (Phase 3-4: Lock UI)
-  const { lockStatus, lockedBy } = useScriptLock(currentScript?.id);
+  // Uses context to prevent concurrent lock acquisitions (TMG blocker resolution)
+  const { lockStatus, lockedBy } = useScriptLockContext();
 
   // Convert lastSaved from string (hook) to Date (component usage)
   const lastSaved = useMemo(
