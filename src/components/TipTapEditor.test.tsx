@@ -13,6 +13,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TipTapEditor } from './TipTapEditor';
 import { NavigationProvider } from '../contexts/NavigationContext';
 import { ScriptStatusProvider } from '../contexts/ScriptStatusContext';
+import { useScriptLock } from '../hooks/useScriptLock';
+import { useCurrentScript } from '../core/state/useCurrentScript';
 
 // Mock the auth context
 vi.mock('../contexts/AuthContext', () => ({
@@ -74,11 +76,45 @@ vi.mock('@tiptap/starter-kit', () => ({
   }
 }));
 
+// Mock useScriptLock to track invocations
+vi.mock('../hooks/useScriptLock', () => ({
+  useScriptLock: vi.fn()
+}));
+
+// Mock useCurrentScript
+vi.mock('../core/state/useCurrentScript', () => ({
+  useCurrentScript: vi.fn()
+}));
+
 describe('TipTapEditor with Navigation', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default mock implementation for useScriptLock
+    vi.mocked(useScriptLock).mockReturnValue({
+      lockStatus: 'unlocked',
+      lockedBy: null,
+      releaseLock: vi.fn().mockResolvedValue(undefined),
+      requestEdit: vi.fn().mockResolvedValue(undefined),
+      forceUnlock: vi.fn().mockResolvedValue(undefined)
+    });
+    // Default mock for useCurrentScript (no script selected)
+    vi.mocked(useCurrentScript).mockReturnValue({
+      currentScript: null,
+      selectedVideo: null,
+      save: vi.fn().mockResolvedValue(undefined),
+      updateStatus: vi.fn().mockResolvedValue(undefined),
+      saveStatus: 'saved',
+      setSaveStatus: vi.fn(),
+      lastSaved: null,
+      isLoading: false,
+      componentCount: 0,
+      isSaving: false,
+      isUpdatingStatus: false,
+      error: null,
+      userRole: null
+    });
     queryClient = new QueryClient({
       defaultOptions: {
         queries: {
@@ -116,5 +152,83 @@ describe('TipTapEditor with Navigation', () => {
 
     expect(screen.getByText('Select a Video to Edit')).toBeInTheDocument();
     expect(screen.getByText(/Choose a video from the navigation panel/)).toBeInTheDocument();
+  });
+
+  describe('ScriptLockContext Integration (TMG Blocker Resolution)', () => {
+    it('should use ScriptLockContext instead of direct useScriptLock', () => {
+      // GREEN: This test now passes after migration
+      // TipTapEditor wraps content in ScriptLockProvider
+      // ScriptLockProvider calls useScriptLock once
+      // Internal components use useScriptLockContext
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <NavigationProvider>
+            <ScriptStatusProvider>
+              <TipTapEditor />
+            </ScriptStatusProvider>
+          </NavigationProvider>
+        </QueryClientProvider>
+      );
+
+      // Verify ScriptLockProvider called useScriptLock (context pattern active)
+      // Expected: 1 invocation from ScriptLockProvider
+      expect(vi.mocked(useScriptLock)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(useScriptLock)).toHaveBeenCalledWith(undefined); // No script selected
+    });
+
+    it('should prevent concurrent lock acquisitions with multiple consumers', () => {
+      // REGRESSION TEST: Phase 3-4 scenario simulation
+      // Verifies the architectural fix prevents lock stealing bug
+
+      // Mock a selected script to trigger lock acquisition
+      const mockCurrentScript = {
+        id: 'test-script-123',
+        video_id: 'video-456',
+        plain_text: 'Test content',
+        status: 'draft' as const,
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        components: []
+      };
+
+      // Mock useCurrentScript to return our test script
+      vi.mocked(useCurrentScript).mockReturnValue({
+        currentScript: mockCurrentScript,
+        selectedVideo: { id: 'video-456', title: 'Test Video', eav_code: 'V123' },
+        save: vi.fn().mockResolvedValue(undefined),
+        updateStatus: vi.fn().mockResolvedValue(undefined),
+        saveStatus: 'saved',
+        setSaveStatus: vi.fn(),
+        lastSaved: new Date('2024-01-01T00:00:00Z'),
+        isLoading: false,
+        componentCount: 0,
+        isSaving: false,
+        isUpdatingStatus: false,
+        error: null,
+        userRole: 'admin'
+      });
+
+      render(
+        <QueryClientProvider client={queryClient}>
+          <NavigationProvider>
+            <ScriptStatusProvider>
+              <TipTapEditor />
+            </ScriptStatusProvider>
+          </NavigationProvider>
+        </QueryClientProvider>
+      );
+
+      // CRITICAL: Only ONE useScriptLock invocation despite multiple consuming components
+      // ScriptLockProvider owns the lock, children read via context
+      expect(vi.mocked(useScriptLock)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(useScriptLock)).toHaveBeenCalledWith('test-script-123');
+
+      // If this test passes, the architectural fix is working:
+      // - ScriptLockProvider calls useScriptLock once
+      // - TipTapEditorContent uses useScriptLockContext (not useScriptLock)
+      // - Future: ScriptLockIndicator will also use useScriptLockContext
+      // - Result: No lock stealing, no race conditions
+    });
   });
 });
