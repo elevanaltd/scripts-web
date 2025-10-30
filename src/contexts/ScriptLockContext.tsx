@@ -44,6 +44,7 @@ const ScriptLockContext = createContext<ScriptLockContextValue | null>(null)
  * @throws Error if used outside ScriptLockProvider
  * @returns Script lock state from provider
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useScriptLockContext(): ScriptLockContextValue {
   const context = useContext(ScriptLockContext)
 
