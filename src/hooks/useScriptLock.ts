@@ -181,12 +181,12 @@ export function useScriptLock(
         scriptLocksTable(client)
           .delete()
           .eq('script_id', scriptId)
-          .then(({ error }) => {
+          .then(({ error }: { error: unknown }) => {
             if (error) {
               console.error('[useScriptLock] Cleanup delete failed:', error)
             }
           })
-          .catch((err) => {
+          .catch((err: unknown) => {
             console.error('[useScriptLock] Cleanup delete error:', err)
           })
       }
