@@ -1,49 +1,26 @@
+/**
+ * ScriptLockContext - Integration Tests
+ *
+ * **Test Strategy:** Real Supabase integration (same as useScriptLock tests)
+ * - CI: Uses Supabase preview branch (isolated per PR)
+ * - Local: Uses local Supabase (supabase start on port 54321)
+ *
+ * **Coverage:**
+ * 1. Provider requirement enforcement (throws without provider)
+ * 2. Context state sharing (provider wraps useScriptLock)
+ * 3. Multiple consumer safety (no concurrent lock acquisitions)
+ *
+ * **TMG Architectural Fix:**
+ * These tests validate the resolution of the concurrent lock bug:
+ * - Multiple components can consume same lock state safely
+ * - Only one useScriptLock invocation per script ID
+ * - No lock stealing when mounting additional UI
+ */
+
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { ScriptLockProvider, useScriptLockContext } from './ScriptLockContext'
-import { supabase } from '../lib/supabase'
-
-// Mock Supabase
-vi.mock('../lib/supabase', () => ({
-  supabase: {
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: vi.fn()
-        }))
-      })),
-      insert: vi.fn(() => ({
-        select: vi.fn(() => ({
-          single: vi.fn()
-        }))
-      })),
-      update: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          select: vi.fn(() => ({
-            single: vi.fn()
-          }))
-        }))
-      })),
-      delete: vi.fn(() => ({
-        eq: vi.fn()
-      }))
-    })),
-    channel: vi.fn(() => ({
-      on: vi.fn(() => ({
-        on: vi.fn(() => ({
-          subscribe: vi.fn()
-        }))
-      })),
-      unsubscribe: vi.fn()
-    })),
-    auth: {
-      getUser: vi.fn(() => Promise.resolve({
-        data: { user: { id: 'test-user-id' } },
-        error: null
-      }))
-    }
-  }
-}))
+import { testSupabase, signInAsTestUser, cleanupTestData } from '../test/supabase-test-client'
 
 // Test component that uses the context
 function TestConsumer() {
@@ -58,13 +35,21 @@ function TestConsumer() {
   )
 }
 
-describe('ScriptLockContext', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
+describe.sequential('ScriptLockContext (integration)', () => {
+  // Test script ID - uses existing script from seed.sql
+  const TEST_SCRIPT_ID = '00000000-0000-0000-0000-000000000101'
+
+  beforeEach(async () => {
+    // Clean up any existing locks
+    await cleanupTestData(testSupabase)
+
+    // Sign in as admin for test setup
+    await signInAsTestUser(testSupabase, 'admin')
   })
 
-  afterEach(() => {
-    vi.clearAllMocks()
+  afterEach(async () => {
+    // Clean up test data after each test
+    await cleanupTestData(testSupabase)
   })
 
   describe('useScriptLockContext', () => {
@@ -80,34 +65,8 @@ describe('ScriptLockContext', () => {
     })
 
     it('should provide lock state from provider', async () => {
-      // Mock successful lock acquisition
-      const mockLock = {
-        id: 'lock-123',
-        script_id: 'script-123',
-        user_id: 'test-user-id',
-        locked_at: new Date().toISOString(),
-        user_profiles: {
-          display_name: 'Test User'
-        }
-      }
-
-      vi.mocked(supabase.from).mockReturnValue({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
-          }))
-        })),
-        insert: vi.fn(() => ({
-          select: vi.fn(() => ({
-            single: vi.fn(() => Promise.resolve({ data: mockLock, error: null }))
-          }))
-        })),
-        update: vi.fn(),
-        delete: vi.fn()
-      } as any)
-
       render(
-        <ScriptLockProvider scriptId="script-123">
+        <ScriptLockProvider scriptId={TEST_SCRIPT_ID}>
           <TestConsumer />
         </ScriptLockProvider>
       )
@@ -116,55 +75,38 @@ describe('ScriptLockContext', () => {
       expect(screen.getByTestId('lock-status')).toHaveTextContent('checking')
 
       // Wait for lock acquisition
-      await waitFor(() => {
-        expect(screen.getByTestId('lock-status')).toHaveTextContent('acquired')
-      })
+      await waitFor(
+        () => {
+          expect(screen.getByTestId('lock-status')).toBe('acquired')
+        },
+        { timeout: 10000 }
+      )
 
-      expect(screen.getByTestId('locked-by')).toHaveTextContent('Test User')
-    })
+      // Verify lock holder info is displayed
+      const lockedBy = screen.getByTestId('locked-by')
+      expect(lockedBy).not.toHaveTextContent('none')
+      expect(lockedBy.textContent).toBeTruthy()
+    }, 15000)
   })
 
-  describe('ScriptLockProvider', () => {
-    it('should provide shared lock state to multiple consumers', async () => {
-      // Mock successful lock acquisition
-      const mockLock = {
-        id: 'lock-123',
-        script_id: 'script-123',
-        user_id: 'test-user-id',
-        locked_at: new Date().toISOString(),
-        user_profiles: {
-          display_name: 'Test User'
-        }
-      }
-
-      vi.mocked(supabase.from).mockReturnValue({
-        select: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null }))
-          }))
-        })),
-        insert: vi.fn(() => ({
-          select: vi.fn(() => ({
-            single: vi.fn(() => Promise.resolve({ data: mockLock, error: null }))
-          }))
-        })),
-        update: vi.fn(),
-        delete: vi.fn()
-      } as any)
-
+  describe('ScriptLockProvider - Concurrent Consumer Protection', () => {
+    it('should allow multiple consumers without lock conflicts', async () => {
       render(
-        <ScriptLockProvider scriptId="script-123">
+        <ScriptLockProvider scriptId={TEST_SCRIPT_ID}>
           <TestConsumer />
           <TestConsumer />
         </ScriptLockProvider>
       )
 
       // Wait for lock acquisition
-      await waitFor(() => {
-        const statusElements = screen.getAllByTestId('lock-status')
-        expect(statusElements[0]).toHaveTextContent('acquired')
-        expect(statusElements[1]).toHaveTextContent('acquired')
-      })
+      await waitFor(
+        () => {
+          const statusElements = screen.getAllByTestId('lock-status')
+          expect(statusElements[0]).toHaveTextContent('acquired')
+          expect(statusElements[1]).toHaveTextContent('acquired')
+        },
+        { timeout: 10000 }
+      )
 
       // Verify both consumers see the same state
       const statusElements = screen.getAllByTestId('lock-status')
@@ -172,8 +114,13 @@ describe('ScriptLockContext', () => {
 
       expect(statusElements[0]).toHaveTextContent('acquired')
       expect(statusElements[1]).toHaveTextContent('acquired')
-      expect(lockedByElements[0]).toHaveTextContent('Test User')
-      expect(lockedByElements[1]).toHaveTextContent('Test User')
-    })
+      expect(lockedByElements[0].textContent).toBe(lockedByElements[1].textContent)
+
+      // Verify only ONE lock exists in database (not two competing locks)
+      const { data: locks } = await testSupabase.from('script_locks').select('*').eq('script_id', TEST_SCRIPT_ID)
+
+      expect(locks).toBeTruthy()
+      expect(locks?.length).toBe(1) // Critical: Only one lock despite two consumers
+    }, 15000)
   })
 })
