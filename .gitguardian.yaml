@@ -25,6 +25,11 @@ matches-ignore:
     match: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc3QtcHJvamVjdCI.*
     # JWT tokens with "test-project" in payload
 
+  - name: Supabase Local Development Default Key
+    match: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9\.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0
+    # Supabase CLI default local development key (publicly documented, non-secret)
+
 # Document exclusion rationale
 # These are non-functional test fixtures used in test environments only.
 # Real credentials are managed via environment variables (not committed to git).
+# The Supabase local dev key is publicly documented and only works with local instances.
