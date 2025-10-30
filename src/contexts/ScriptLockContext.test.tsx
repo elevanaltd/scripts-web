@@ -66,7 +66,7 @@ describe.sequential('ScriptLockContext (integration)', () => {
 
     it('should provide lock state from provider', async () => {
       render(
-        <ScriptLockProvider scriptId={TEST_SCRIPT_ID}>
+        <ScriptLockProvider scriptId={TEST_SCRIPT_ID} client={testSupabase}>
           <TestConsumer />
         </ScriptLockProvider>
       )
@@ -77,7 +77,7 @@ describe.sequential('ScriptLockContext (integration)', () => {
       // Wait for lock acquisition
       await waitFor(
         () => {
-          expect(screen.getByTestId('lock-status')).toBe('acquired')
+          expect(screen.getByTestId('lock-status')).toHaveTextContent('acquired')
         },
         { timeout: 10000 }
       )
@@ -92,7 +92,7 @@ describe.sequential('ScriptLockContext (integration)', () => {
   describe('ScriptLockProvider - Concurrent Consumer Protection', () => {
     it('should allow multiple consumers without lock conflicts', async () => {
       render(
-        <ScriptLockProvider scriptId={TEST_SCRIPT_ID}>
+        <ScriptLockProvider scriptId={TEST_SCRIPT_ID} client={testSupabase}>
           <TestConsumer />
           <TestConsumer />
         </ScriptLockProvider>

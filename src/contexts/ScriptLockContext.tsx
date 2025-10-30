@@ -46,6 +46,11 @@
 
 import { createContext, useContext, ReactNode } from 'react'
 import { useScriptLock, ScriptLockStatus } from '../hooks/useScriptLock'
+import type { SupabaseClient } from '@supabase/supabase-js'
+
+// Generic Database type to accept both local and shared-lib Database types
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyDatabase = any
 
 // Context type matches ScriptLockStatus interface
 type ScriptLockContextValue = ScriptLockStatus
@@ -75,16 +80,18 @@ export function useScriptLockContext(): ScriptLockContextValue {
  *
  * @param scriptId - UUID of script to lock (undefined when no script selected)
  * @param children - Components that will consume lock state
+ * @param client - Optional Supabase client for dependency injection (tests)
  */
 interface ScriptLockProviderProps {
   scriptId: string | undefined
   children: ReactNode
+  client?: SupabaseClient<AnyDatabase>
 }
 
-export function ScriptLockProvider({ scriptId, children }: ScriptLockProviderProps) {
+export function ScriptLockProvider({ scriptId, children, client }: ScriptLockProviderProps) {
   // Single acquisition point - all children share this state
   // When scriptId is undefined, useScriptLock returns unlocked state
-  const lockState = useScriptLock(scriptId)
+  const lockState = useScriptLock(scriptId, client)
 
   return <ScriptLockContext.Provider value={lockState}>{children}</ScriptLockContext.Provider>
 }
