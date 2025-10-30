@@ -42,12 +42,14 @@ export function useScriptLock(
 
   // Track acquisition state to prevent race conditions
   const isAcquiringRef = useRef(false)
+  const isUnmountingRef = useRef(false)
+  const isManualReleaseRef = useRef(false)
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
 
   // Auto-lock on mount
   const acquireLock = useCallback(async () => {
-    if (!scriptId || isAcquiringRef.current) return
+    if (!scriptId || isAcquiringRef.current || isUnmountingRef.current) return
 
     isAcquiringRef.current = true
     setLockStatus('checking')
@@ -105,11 +107,20 @@ export function useScriptLock(
     if (!scriptId) return
 
     try {
+      // Set flag to prevent re-acquisition on DELETE event
+      isManualReleaseRef.current = true
+
       await scriptLocksTable(client).delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
+
+      // Reset flag after a delay (allows DELETE event to process)
+      setTimeout(() => {
+        isManualReleaseRef.current = false
+      }, 1000)
     } catch (err) {
       console.error('Lock release failed:', err)
+      isManualReleaseRef.current = false
     }
   }, [scriptId, client])
 
@@ -142,18 +153,35 @@ export function useScriptLock(
 
     // Cleanup on unmount
     return () => {
-      if (scriptId && lockStatus === 'acquired') {
-        scriptLocksTable(client).delete().eq('script_id', scriptId)
+      // Set unmounting flag to prevent re-acquisition
+      isUnmountingRef.current = true
+
+      // Unsubscribe from realtime channel FIRST (prevent DELETE event from triggering re-acquisition)
+      if (channelRef.current) {
+        client.removeChannel(channelRef.current)
+        channelRef.current = null
       }
 
       // Clear heartbeat interval
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current)
+        heartbeatIntervalRef.current = null
       }
 
-      // Unsubscribe from realtime channel
-      if (channelRef.current) {
-        client.removeChannel(channelRef.current)
+      // Delete lock LAST (after channel removed)
+      if (scriptId) {
+        // Fire-and-forget deletion (cleanup must be synchronous)
+        scriptLocksTable(client)
+          .delete()
+          .eq('script_id', scriptId)
+          .then(({ error }) => {
+            if (error) {
+              console.error('[useScriptLock] Cleanup delete failed:', error)
+            }
+          })
+          .catch((err) => {
+            console.error('[useScriptLock] Cleanup delete error:', err)
+          })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,15 +222,28 @@ export function useScriptLock(
           table: 'script_locks',
           filter: `script_id=eq.${scriptId}`,
         },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
+
+            // Fetch lock holder's name from user_profiles (payload only has locked_by UUID)
+            const { data: profile } = await client
+              .from('user_profiles')
+              .select('display_name')
+              .eq('id', newLock.locked_by)
+              .maybeSingle()
+
             setLockStatus('locked')
-            setLockedBy({ id: newLock.locked_by_id, name: newLock.locked_by_name })
+            setLockedBy({
+              id: newLock.locked_by,
+              name: profile?.display_name || 'Unknown User'
+            })
           } else if (payload.eventType === 'DELETE') {
-            // Lock released - attempt re-acquisition
-            acquireLock()
+            // Lock released - attempt re-acquisition (unless it was a manual release by this user)
+            if (!isManualReleaseRef.current) {
+              acquireLock()
+            }
           }
         }
       )

@@ -29,7 +29,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { useScriptLock } from './useScriptLock'
 import { testSupabase, signInAsTestUser, cleanupTestData, authDelay } from '../test/supabase-test-client'
 
-describe('useScriptLock (integration)', () => {
+describe.sequential('useScriptLock (integration)', () => {
   // Test script ID - uses existing script from seed.sql (supabase/seed.sql)
   // Script '00000000-0000-0000-0000-000000000101' is seeded as draft status
   // Admin user has access to all scripts via user_accessible_scripts view
