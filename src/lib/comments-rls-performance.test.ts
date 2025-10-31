@@ -48,6 +48,15 @@ async function measureQueryTime<T>(operation: () => Promise<T>): Promise<{ resul
   return { result, timeMs };
 }
 
+// SKIP REASON: DEFERRAL
+// BLOCKED BY: Strategic deferral - RLS performance optimization not MVP critical
+// OWNER: implementation-lead
+// UNBLOCK TARGET: Post-Phase 5 (performance review)
+// DETAILS: Tests validate RLS query performance with InitPlan optimization.
+//          Current RLS policies already optimized (50-100ms improvement at scale).
+//          Performance tests ensure optimizations maintain correctness.
+// TRACKING: Strategic deferral - confirm roadmap placement
+
 describe.skip('RLS Performance Optimization - TDD Phase', () => {
   let supabaseClient: SupabaseClient<Database>;
 

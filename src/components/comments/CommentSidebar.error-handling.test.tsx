@@ -156,6 +156,16 @@ const sampleComments: CommentWithUser[] = [
   },
 ];
 
+// SKIP REASON: FRAMEWORK
+// BLOCKED BY: 9 test failures in CommentSidebar cache + BroadcastChannel polyfill
+// OWNER: implementation-lead
+// UNBLOCK TARGET: B1_03 phase (scheduled parallel to B1_03 work)
+// DETAILS: Cannot enable error handling suite until underlying issues fixed:
+//          - Missing clear() hook in comment cache during component unmount
+//          - BroadcastChannel polyfill Node.js compatibility (1,772 errors)
+//          - Mock timing pattern reliability
+// TRACKING: B1_03 Critical (See APP-CONTEXT.md for status)
+
 describe.skip('CommentSidebar - Error Handling (SKIPPED - Unblock BLOCKING bugs first)', () => {
   const mockGetComments = commentsLib.getComments as ReturnType<typeof vi.fn>;
   const mockCreateComment = commentsLib.createComment as ReturnType<typeof vi.fn>;

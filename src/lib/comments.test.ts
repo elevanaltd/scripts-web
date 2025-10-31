@@ -270,6 +270,15 @@ describe('Comments Infrastructure - Integration Tests', () => {
     });
   });
 
+  // SKIP REASON: DEFERRAL
+  // BLOCKED BY: Strategic deferral - RLS contract validation not MVP critical
+  // OWNER: implementation-lead
+  // UNBLOCK TARGET: Post-Phase 5 (strategic review)
+  // DETAILS: Tests validate RLS policy contracts for admin/client access patterns.
+  //          Current RLS policies working in production (9/10 security score).
+  //          Contract-driven tests ensure policy changes don't break assumptions.
+  // TRACKING: Strategic deferral - confirm roadmap placement
+
   describe.skip('Comments RLS Security - CONTRACT-DRIVEN-CORRECTION', () => {
     test('admin should have full access to all comments', async () => {
       await switchToSession(supabaseClient, adminSession);

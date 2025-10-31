@@ -58,6 +58,17 @@ vi.mock('../../contexts/AuthContext', () => ({
 import { CommentSidebar } from './CommentSidebar';
 import * as commentsLib from '../../lib/comments';
 
+// SKIP REASON: RED
+// BLOCKED BY: Connection state machine feature not yet implemented
+// OWNER: implementation-lead
+// UNBLOCK TARGET: Phase 2.2 (Collaborative Comments)
+// DETAILS: Tests define contract for resilient realtime connection handling:
+//          - connected → reconnecting → degraded state transitions
+//          - UI preservation during reconnection (non-destructive)
+//          - Action button state management
+//          - Status banner visibility
+// TRACKING: Scheduled in APP-ROADMAP.md Phase 2.2
+
 describe.skip('CommentSidebar - Connection State Machine', () => {
   let subscribeCallback: (status: string) => void;
 

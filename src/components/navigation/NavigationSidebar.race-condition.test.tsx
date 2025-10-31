@@ -39,6 +39,14 @@ const TestWrapper = ({ children }: { children: React.ReactNode }) => (
   </NavigationProvider>
 );
 
+// SKIP REASON: INFRA
+// BLOCKED BY: Missing NavigationProvider test utilities for proper context wrapping
+// OWNER: implementation-lead
+// UNBLOCK TARGET: Phase 0 (hub-and-spoke preparation)
+// DETAILS: Requires src/test/NavigationProvider.test-utils.tsx with renderHookWithNavigation()
+//          to properly wrap NavigationProvider + QueryClientProvider + AuthProvider
+// TRACKING: See /Volumes/HestAI-Projects/eav-ops/.coord/analysis/SKIPPED-TESTS-UNBLOCK-CHECKLIST.md (Section 3)
+
 describe.skip('NavigationSidebar Race Condition Prevention', () => {
   beforeEach(() => {
     vi.clearAllMocks();
