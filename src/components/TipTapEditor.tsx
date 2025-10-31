@@ -376,23 +376,30 @@ const TipTapEditorContent: React.FC = () => {
       return;
     }
 
-    // CRITICAL: Wait for lock acquisition before allowing saves
-    // Race condition fix (2025-10-31): Lock acquisition is async (~100-300ms)
-    // Auto-save can trigger while lockStatus='checking', causing 403 errors
-    // RPC save_script_with_components requires lock to exist in database
-    if (lockStatus !== 'acquired') {
-      Logger.debug('Save blocked: Waiting for lock acquisition', {
-        scriptId: currentScript.id,
-        lockStatus,
+    // RACE CONDITION FIX (2025-10-31): Verify lock exists in database before attempting save
+    // Problem: Lock acquisition is async (~100-300ms). During initial mount, lockStatus transitions:
+    //   'checking' → (100-300ms delay) → 'acquired'
+    // Auto-save can trigger during this window, causing 403 errors when save_script_with_components
+    // RPC checks for lock existence.
+    //
+    // Solution: Instead of blocking saves based on lockStatus state (which is optimistic),
+    // verify the lock actually exists in the database. This makes saves self-correcting:
+    // - If lockStatus='checking' but lock exists in DB → save proceeds (lock acquired faster than state updated)
+    // - If lockStatus='acquired' but lock missing from DB → save blocked (state is stale)
+    // - If lockStatus='locked' → save blocked (don't have permission)
+    //
+    // This approach eliminates the race condition by using database as source of truth,
+    // while still respecting lockStatus='locked' to prevent saves when another user has the lock.
+
+    // Quick check: If we know we're locked out, don't even query database
+    if (lockStatus === 'locked') {
+      Logger.debug('Save blocked: Script locked by another user', {
+        scriptId: currentScript.id
       });
       return;
     }
 
-    // DEFENSE IN DEPTH: Verify lock exists in database before attempting save
-    // Race condition fix (2025-10-31): lockStatus can transition to 'acquired' briefly
-    // before the database lock is actually persisted, causing 403 errors when
-    // auto-save fires in that narrow window. This verification ensures the lock
-    // record exists in the DB before we call save_script_with_components RPC.
+    // Verify lock exists in database (handles lockStatus='checking' or 'acquired')
     try {
       // Type assertion needed: script_locks is app-specific table not in shared-lib types
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -403,7 +410,7 @@ const TipTapEditorContent: React.FC = () => {
         .maybeSingle();
 
       if (lockError) {
-        Logger.warn('Lock verification failed', {
+        Logger.warn('Save blocked: Lock verification failed', {
           error: lockError.message,
           scriptId: currentScript.id
         });
@@ -411,14 +418,31 @@ const TipTapEditorContent: React.FC = () => {
       }
 
       if (!lockRecord) {
-        Logger.warn('Save blocked: Lock not found in database', {
+        Logger.debug('Save blocked: Lock not yet acquired (checking database)', {
           scriptId: currentScript.id,
-          lockStatus, // Shows state thinks it's acquired but DB disagrees
+          lockStatus, // May show 'checking' or 'acquired' depending on timing
         });
         return;
       }
+
+      // Lock exists - verify it's owned by us
+      const { data: currentUser } = await supabase.auth.getUser();
+      if (lockRecord.locked_by !== currentUser.user?.id) {
+        Logger.warn('Save blocked: Lock owned by different user', {
+          scriptId: currentScript.id,
+          lockOwner: lockRecord.locked_by,
+          currentUser: currentUser.user?.id
+        });
+        return;
+      }
+
+      // Lock verified - proceed with save
+      Logger.debug('Lock verified, proceeding with save', {
+        scriptId: currentScript.id,
+        lockStatus
+      });
     } catch (err) {
-      Logger.error('Lock verification error', {
+      Logger.error('Save blocked: Lock verification error', {
         error: err instanceof Error ? err.message : String(err),
         scriptId: currentScript.id
       });

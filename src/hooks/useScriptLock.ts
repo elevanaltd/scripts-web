@@ -44,6 +44,7 @@ export function useScriptLock(
   const isAcquiringRef = useRef(false)
   const isUnmountingRef = useRef(false)
   const isManualReleaseRef = useRef(false)
+  const lockAcquisitionSucceededRef = useRef(false) // Track if OUR lock acquisition RPC succeeded
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
   const reacquisitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -67,15 +68,89 @@ export function useScriptLock(
 
       const lockResult = data?.[0]
       if (lockResult?.success) {
-        setLockStatus('acquired')
-        setLockedBy({ id: lockResult.locked_by_user_id, name: lockResult.locked_by_name })
+        // RACE CONDITION FIX (2025-10-31): Verify lock exists in database before setting acquired
+        // Problem: acquireScriptLock() returns success immediately, but database INSERT may not be visible yet
+        // The actual fix is in TipTapEditor handleSave() which verifies lock in database before saving
+        // This verification ensures lockStatus eventually reflects database reality for UI consistency
+        const { data: currentUser } = await client.auth.getUser()
+        const currentUserId = currentUser.user?.id
+
+        if (!currentUserId) {
+          console.error('[useScriptLock] No current user ID')
+          setLockStatus('locked')
+          isAcquiringRef.current = false
+          return
+        }
+
+        let verified = false
+        let attempts = 0
+        const maxAttempts = 10 // Max 1 second total wait (10 * 100ms)
+
+        while (!verified && attempts < maxAttempts) {
+          const { data: lockRecord, error: verifyError} = await scriptLocksTable(client)
+            .select('locked_by')
+            .eq('script_id', scriptId)
+            .maybeSingle()
+
+          if (verifyError) {
+            console.error('[useScriptLock] Lock verification error:', verifyError)
+            setLockStatus('locked')
+            isAcquiringRef.current = false
+            return
+          }
+
+          if (lockRecord) {
+            // Lock exists in database - verify it's owned by us
+            if (lockRecord.locked_by === currentUserId) {
+              // OUR lock confirmed in database
+              verified = true
+              lockAcquisitionSucceededRef.current = true // Mark that our RPC call succeeded
+              setLockStatus('acquired')
+              setLockedBy({ id: lockResult.locked_by_user_id, name: lockResult.locked_by_name })
+              console.log('[useScriptLock] Lock acquired and verified', {
+                scriptId,
+                attempts: attempts + 1,
+                verificationTimeMs: (attempts + 1) * 100
+              })
+            } else {
+              // Lock exists but owned by another user (race condition - we lost)
+              console.log('[useScriptLock] Lock verification failed - lock held by another user')
+              setLockStatus('locked')
+              // Fetch other user's name for display
+              const { data: profile } = await client
+                .from('user_profiles')
+                .select('display_name')
+                .eq('id', lockRecord.locked_by)
+                .maybeSingle()
+              setLockedBy({
+                id: lockRecord.locked_by,
+                name: profile?.display_name || 'Unknown User'
+              })
+              isAcquiringRef.current = false
+              return
+            }
+          } else {
+            // Lock not visible yet, wait and retry
+            attempts++
+            if (attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 100))
+            }
+          }
+        }
+
+        if (!verified) {
+          console.error('[useScriptLock] Lock verification timeout - lock not found in database after', maxAttempts * 100, 'ms')
+          setLockStatus('locked')
+        }
       } else if (lockResult) {
         console.log('[useScriptLock] Lock already held by:', lockResult.locked_by_name)
+        lockAcquisitionSucceededRef.current = false // Mark that our RPC call failed
         setLockStatus('locked')
         setLockedBy({ id: lockResult.locked_by_user_id || '', name: lockResult.locked_by_name || 'Unknown' })
       }
     } catch (err) {
       console.error('[useScriptLock] Lock acquisition failed:', err)
+      lockAcquisitionSucceededRef.current = false // Mark that our RPC call failed
       setLockStatus('locked')
     } finally {
       isAcquiringRef.current = false
@@ -111,6 +186,7 @@ export function useScriptLock(
     try {
       // Set flag to prevent re-acquisition on DELETE event
       isManualReleaseRef.current = true
+      lockAcquisitionSucceededRef.current = false // Reset acquisition flag
 
       await scriptLocksTable(client).delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
@@ -251,12 +327,22 @@ export function useScriptLock(
             const isOwnLock = currentUserId === newLock.locked_by
 
             if (isOwnLock) {
-              // This is our own lock acquisition
-              setLockStatus('acquired')
-              setLockedBy({
-                id: newLock.locked_by,
-                name: profileResult.data?.display_name || 'Unknown User'
-              })
+              // This is our own lock acquisition - but only trust it if our RPC call succeeded
+              // This prevents the case where two hooks for the same user try to acquire the same lock:
+              // - Hook1 acquires lock (RPC succeeds, flag=true)
+              // - Hook2 tries to acquire (RPC fails, flag=false)
+              // - Hook2 receives INSERT event for Hook1's lock
+              // - Without this check, Hook2 would incorrectly set lockStatus='acquired'
+              if (lockAcquisitionSucceededRef.current) {
+                setLockStatus('acquired')
+                setLockedBy({
+                  id: newLock.locked_by,
+                  name: profileResult.data?.display_name || 'Unknown User'
+                })
+              } else {
+                // Our RPC call failed, so we don't own this lock (race condition)
+                console.log('[useScriptLock] Ignoring realtime INSERT - our acquisition RPC failed')
+              }
             } else {
               // Lock is held by another user
               setLockStatus('locked')
