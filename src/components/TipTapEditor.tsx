@@ -376,6 +376,18 @@ const TipTapEditorContent: React.FC = () => {
       return;
     }
 
+    // CRITICAL: Wait for lock acquisition before allowing saves
+    // Race condition fix (2025-10-31): Lock acquisition is async (~100-300ms)
+    // Auto-save can trigger while lockStatus='checking', causing 403 errors
+    // RPC save_script_with_components requires lock to exist in database
+    if (lockStatus !== 'acquired') {
+      Logger.debug('Save blocked: Waiting for lock acquisition', {
+        scriptId: currentScript.id,
+        lockStatus,
+      });
+      return;
+    }
+
     try {
       const plainText = editor.getText();
       // ISSUE: Y.js Collaborative Editing Integration
@@ -402,7 +414,7 @@ const TipTapEditorContent: React.FC = () => {
         // Hook automatically sets saveStatus('error') via TanStack Query onError
       }
     }
-  }, [currentScript, editor, extractedComponents, loadCommentHighlights, permissions.canEditScript, save]);
+  }, [currentScript, editor, extractedComponents, loadCommentHighlights, lockStatus, permissions.canEditScript, save]);
 
   // Handle comment creation from sidebar
   const handleCommentCreated = useCallback(async () => {
