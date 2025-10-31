@@ -793,6 +793,11 @@ const TipTapEditorContent: React.FC = () => {
               <div className="loading-spinner"></div>
               <p>Loading script...</p>
             </div>
+          ) : lockStatus === 'checking' && currentScript ? (
+            <div className="loading-placeholder">
+              <div className="loading-spinner"></div>
+              <p>Acquiring edit lock...</p>
+            </div>
           ) : !selectedVideo ? (
             <div className="no-video-placeholder">
               <h3>Select a Video to Edit</h3>
