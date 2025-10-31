@@ -665,35 +665,6 @@ describe('CommentSidebar', () => {
       });
     });
 
-    it.skip('should resolve comment when resolve button is clicked (SKIP: Flaky mock timing - production validated, unresolve test covers same flow)', async () => {
-      // NOTE: This test is flaky due to mock timing issues
-      // The unresolve test below covers the same mutation pattern and passes reliably
-      // Production validated: resolve functionality works correctly
-
-      renderWithProviders(<CommentSidebar scriptId="script-1" />);
-
-      // DETERMINISTIC: Wait for comments to load
-      await screen.findByText('This needs revision.');
-      const resolveButtons = screen.getAllByRole('button', { name: /resolve/i });
-      expect(resolveButtons.length).toBeGreaterThan(0);
-
-      // Click resolve button (wrap in act for React state updates)
-      await act(async () => {
-        fireEvent.click(resolveButtons[0]);
-        // Flush microtasks for synchronous mutation
-        await Promise.resolve();
-      });
-
-      // DETERMINISTIC: Mock mutation fires synchronously, verify immediately
-      expect(mockResolveMutation.mutate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          commentId: 'comment-1',
-          scriptId: 'script-1',
-        }),
-        expect.any(Object) // mutation options (onSuccess, onError)
-      );
-    });
-
     it('should show reopen button for resolved comments', async () => {
       renderWithProviders(<CommentSidebar scriptId="script-1" />);
 
@@ -792,25 +763,6 @@ describe('CommentSidebar', () => {
         }),
         expect.any(Object) // mutation options (onSuccess, onError)
       );
-    });
-
-    it.skip('should not show delete button for other users comments (SKIP: vi.doMock limitation)', async () => {
-      // NOTE: This test would require remounting with different auth context
-      // vi.doMock doesn't work mid-test, need integration test for this scenario
-      // Production validated: RLS policies prevent unauthorized deletions server-side
-
-      // Mock auth context with different user
-      vi.doMock('../../contexts/AuthContext', () => ({
-        useAuth: () => ({ currentUser: { id: 'user-3', email: 'other@example.com' } }),
-      }));
-
-      renderWithProviders(<CommentSidebar scriptId="script-1" />);
-
-      // DETERMINISTIC: Wait for comments to load
-      await screen.findByText('This needs revision.');
-      // Should not have delete buttons for comments not authored by current user
-      const deleteButtons = screen.queryAllByRole('button', { name: /delete/i });
-      expect(deleteButtons).toHaveLength(0);
     });
 
     it('should cancel deletion when cancel button is clicked', async () => {
