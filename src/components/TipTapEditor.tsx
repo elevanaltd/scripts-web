@@ -388,6 +388,43 @@ const TipTapEditorContent: React.FC = () => {
       return;
     }
 
+    // DEFENSE IN DEPTH: Verify lock exists in database before attempting save
+    // Race condition fix (2025-10-31): lockStatus can transition to 'acquired' briefly
+    // before the database lock is actually persisted, causing 403 errors when
+    // auto-save fires in that narrow window. This verification ensures the lock
+    // record exists in the DB before we call save_script_with_components RPC.
+    try {
+      // Type assertion needed: script_locks is app-specific table not in shared-lib types
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: lockRecord, error: lockError } = await (supabase as any)
+        .from('script_locks')
+        .select('locked_by')
+        .eq('script_id', currentScript.id)
+        .maybeSingle();
+
+      if (lockError) {
+        Logger.warn('Lock verification failed', {
+          error: lockError.message,
+          scriptId: currentScript.id
+        });
+        return;
+      }
+
+      if (!lockRecord) {
+        Logger.warn('Save blocked: Lock not found in database', {
+          scriptId: currentScript.id,
+          lockStatus, // Shows state thinks it's acquired but DB disagrees
+        });
+        return;
+      }
+    } catch (err) {
+      Logger.error('Lock verification error', {
+        error: err instanceof Error ? err.message : String(err),
+        scriptId: currentScript.id
+      });
+      return;
+    }
+
     try {
       const plainText = editor.getText();
       // ISSUE: Y.js Collaborative Editing Integration

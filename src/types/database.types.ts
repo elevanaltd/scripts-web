@@ -220,35 +220,6 @@ export type Database = {
         }
         Relationships: []
       }
-      scene_planning_state: {
-        Row: {
-          created_at: string | null
-          id: string
-          script_component_id: string
-          updated_at: string | null
-        }
-        Insert: {
-          created_at?: string | null
-          id?: string
-          script_component_id: string
-          updated_at?: string | null
-        }
-        Update: {
-          created_at?: string | null
-          id?: string
-          script_component_id?: string
-          updated_at?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "scene_planning_state_script_component_id_fkey"
-            columns: ["script_component_id"]
-            isOneToOne: true
-            referencedRelation: "script_components"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       script_components: {
         Row: {
           component_number: number
@@ -378,14 +349,14 @@ export type Database = {
           id: string
           location_other: string | null
           location_start_point: string | null
+          movement_type: string | null
           owner_user_id: string | null
-          scene_id: string
+          script_component_id: string
           shot_number: number
           shot_status: string | null
           shot_type: string | null
           subject: string | null
           subject_other: string | null
-          tracking_type: string | null
           updated_at: string | null
           variant: string | null
         }
@@ -395,14 +366,14 @@ export type Database = {
           id?: string
           location_other?: string | null
           location_start_point?: string | null
+          movement_type?: string | null
           owner_user_id?: string | null
-          scene_id: string
+          script_component_id: string
           shot_number: number
           shot_status?: string | null
           shot_type?: string | null
           subject?: string | null
           subject_other?: string | null
-          tracking_type?: string | null
           updated_at?: string | null
           variant?: string | null
         }
@@ -412,23 +383,23 @@ export type Database = {
           id?: string
           location_other?: string | null
           location_start_point?: string | null
+          movement_type?: string | null
           owner_user_id?: string | null
-          scene_id?: string
+          script_component_id?: string
           shot_number?: number
           shot_status?: string | null
           shot_type?: string | null
           subject?: string | null
           subject_other?: string | null
-          tracking_type?: string | null
           updated_at?: string | null
           variant?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "shots_scene_id_fkey"
-            columns: ["scene_id"]
+            foreignKeyName: "shots_script_component_id_fkey"
+            columns: ["script_component_id"]
             isOneToOne: false
-            referencedRelation: "scene_planning_state"
+            referencedRelation: "script_components"
             referencedColumns: ["id"]
           },
         ]
