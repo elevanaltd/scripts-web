@@ -4,7 +4,7 @@
  * Test Coverage Strategy (Approved by test-methodology-guardian):
  * - Priority: HIGH (loss of lock indicator causes user confusion and data loss)
  * - Target: 7 tests, ≥85% line coverage
- * - Approach: React Testing Library with mocked useScriptLock hook
+ * - Approach: React Testing Library with mocked ScriptLockContext
  *
  * Critical Paths:
  * 1. Shows acquired status with green indicator
@@ -17,24 +17,28 @@
  *
  * Constitutional Basis: TDD RED→GREEN→REFACTOR protocol
  *
+ * **MIGRATION NOTES (2025-10-31):**
+ * - Updated to use ScriptLockContext instead of direct useScriptLock mocking
+ * - Component now consumes context (prevents duplicate lock acquisition bug)
+ * - Tests verify context consumption behavior
+ *
  * **RIPPLE ANALYSIS:**
- * - LOCAL: ScriptLockIndicator component (new component)
- * - INTEGRATES: useScriptLock hook (existing, tested)
+ * - LOCAL: ScriptLockIndicator component (migrated to context)
+ * - INTEGRATES: ScriptLockContext (single lock acquisition point)
  * - AFFECTS: User visibility into lock state
- * - PREVENTS: User confusion when lock expires
+ * - PREVENTS: User confusion when lock expires + duplicate lock acquisition
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ScriptLockIndicator } from './ScriptLockIndicator'
-import * as useScriptLockModule from '../hooks/useScriptLock'
+import * as ScriptLockContextModule from '../contexts/ScriptLockContext'
 
-// Mock useScriptLock hook
-vi.mock('../hooks/useScriptLock')
+// Mock ScriptLockContext
+vi.mock('../contexts/ScriptLockContext')
 
 describe('ScriptLockIndicator', () => {
-  const mockScriptId = '00000000-0000-0000-0000-000000000101'
   const mockReleaseLock = vi.fn()
   const mockRequestEdit = vi.fn()
   const mockForceUnlock = vi.fn()
@@ -48,7 +52,7 @@ describe('ScriptLockIndicator', () => {
     // GREEN: Component shows "You're editing" with green indicator
     // REFACTOR: Extract color constants, improve accessibility
 
-    vi.spyOn(useScriptLockModule, 'useScriptLock').mockReturnValue({
+    vi.spyOn(ScriptLockContextModule, 'useScriptLockContext').mockReturnValue({
       lockStatus: 'acquired',
       lockedBy: { id: 'user-123', name: 'Current User' },
       releaseLock: mockReleaseLock,
@@ -56,7 +60,7 @@ describe('ScriptLockIndicator', () => {
       forceUnlock: mockForceUnlock,
     })
 
-    render(<ScriptLockIndicator scriptId={mockScriptId} />)
+    render(<ScriptLockIndicator />)
 
     // Verify acquired status message
     expect(screen.getByText(/You're editing/i)).toBeInTheDocument()
@@ -74,7 +78,7 @@ describe('ScriptLockIndicator', () => {
     // GREEN: Component shows "Locked by Jane Smith" with yellow indicator
     // REFACTOR: Extract lock holder display logic
 
-    vi.spyOn(useScriptLockModule, 'useScriptLock').mockReturnValue({
+    vi.spyOn(ScriptLockContextModule, 'useScriptLockContext').mockReturnValue({
       lockStatus: 'locked',
       lockedBy: { id: 'user-456', name: 'Jane Smith' },
       releaseLock: mockReleaseLock,
@@ -82,7 +86,7 @@ describe('ScriptLockIndicator', () => {
       forceUnlock: mockForceUnlock,
     })
 
-    render(<ScriptLockIndicator scriptId={mockScriptId} />)
+    render(<ScriptLockIndicator />)
 
     // Verify locked status message with user name
     expect(screen.getByText(/Locked by Jane Smith/i)).toBeInTheDocument()
@@ -100,7 +104,7 @@ describe('ScriptLockIndicator', () => {
     // GREEN: Component shows "Checking lock status..." with gray indicator
     // REFACTOR: Ensure loading states are accessible
 
-    vi.spyOn(useScriptLockModule, 'useScriptLock').mockReturnValue({
+    vi.spyOn(ScriptLockContextModule, 'useScriptLockContext').mockReturnValue({
       lockStatus: 'checking',
       lockedBy: null,
       releaseLock: mockReleaseLock,
@@ -108,7 +112,7 @@ describe('ScriptLockIndicator', () => {
       forceUnlock: mockForceUnlock,
     })
 
-    render(<ScriptLockIndicator scriptId={mockScriptId} />)
+    render(<ScriptLockIndicator />)
 
     // Verify checking status message
     expect(screen.getByText(/Checking lock status/i)).toBeInTheDocument()
@@ -126,7 +130,7 @@ describe('ScriptLockIndicator', () => {
     // GREEN: Component shows "⚠️ You lost edit lock" with red indicator
     // REFACTOR: Make warning prominent and accessible
 
-    vi.spyOn(useScriptLockModule, 'useScriptLock').mockReturnValue({
+    vi.spyOn(ScriptLockContextModule, 'useScriptLockContext').mockReturnValue({
       lockStatus: 'unlocked',
       lockedBy: null,
       releaseLock: mockReleaseLock,
@@ -134,7 +138,7 @@ describe('ScriptLockIndicator', () => {
       forceUnlock: mockForceUnlock,
     })
 
-    render(<ScriptLockIndicator scriptId={mockScriptId} />)
+    render(<ScriptLockIndicator />)
 
     // Verify unlocked warning message
     expect(screen.getByText(/You lost edit lock/i)).toBeInTheDocument()
@@ -154,7 +158,7 @@ describe('ScriptLockIndicator', () => {
 
     const user = userEvent.setup()
 
-    vi.spyOn(useScriptLockModule, 'useScriptLock').mockReturnValue({
+    vi.spyOn(ScriptLockContextModule, 'useScriptLockContext').mockReturnValue({
       lockStatus: 'acquired',
       lockedBy: { id: 'user-123', name: 'Current User' },
       releaseLock: mockReleaseLock,
@@ -162,7 +166,7 @@ describe('ScriptLockIndicator', () => {
       forceUnlock: mockForceUnlock,
     })
 
-    render(<ScriptLockIndicator scriptId={mockScriptId} />)
+    render(<ScriptLockIndicator />)
 
     // Click "Release Lock" button
     const releaseButton = screen.getByRole('button', { name: /Release Lock/i })
@@ -179,7 +183,7 @@ describe('ScriptLockIndicator', () => {
 
     const user = userEvent.setup()
 
-    vi.spyOn(useScriptLockModule, 'useScriptLock').mockReturnValue({
+    vi.spyOn(ScriptLockContextModule, 'useScriptLockContext').mockReturnValue({
       lockStatus: 'locked',
       lockedBy: { id: 'user-456', name: 'Jane Smith' },
       releaseLock: mockReleaseLock,
@@ -187,7 +191,7 @@ describe('ScriptLockIndicator', () => {
       forceUnlock: mockForceUnlock,
     })
 
-    render(<ScriptLockIndicator scriptId={mockScriptId} />)
+    render(<ScriptLockIndicator />)
 
     // Click "Request Edit" button
     const requestButton = screen.getByRole('button', { name: /Request Edit/i })
@@ -204,7 +208,7 @@ describe('ScriptLockIndicator', () => {
 
     const user = userEvent.setup()
 
-    vi.spyOn(useScriptLockModule, 'useScriptLock').mockReturnValue({
+    vi.spyOn(ScriptLockContextModule, 'useScriptLockContext').mockReturnValue({
       lockStatus: 'unlocked',
       lockedBy: null,
       releaseLock: mockReleaseLock,
@@ -212,7 +216,7 @@ describe('ScriptLockIndicator', () => {
       forceUnlock: mockForceUnlock,
     })
 
-    render(<ScriptLockIndicator scriptId={mockScriptId} />)
+    render(<ScriptLockIndicator />)
 
     // Click "Re-acquire Lock" button
     const reacquireButton = screen.getByRole('button', { name: /Re-acquire/i })

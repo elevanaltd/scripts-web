@@ -711,7 +711,7 @@ const TipTapEditorContent: React.FC = () => {
 
             {/* Script Lock Indicator (Phase 3-4: Lock UI) */}
             {currentScript && (
-              <ScriptLockIndicator scriptId={currentScript.id} />
+              <ScriptLockIndicator />
             )}
           </div>
 
