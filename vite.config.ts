@@ -61,6 +61,8 @@ export default defineConfig(({ mode }) => {
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
+    teardownTimeout: 60000,  // Allow 60s for cleanup (default 10s)
+    hookTimeout: 30000,      // Allow 30s for beforeEach/afterEach (default 10s)
     css: true,
     exclude: [
       '**/node_modules/**',

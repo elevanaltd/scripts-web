@@ -372,7 +372,8 @@ export function useScriptLock(
     channelRef.current = channel
 
     return () => {
-      client.removeChannel(channel)
+      channel.unsubscribe()  // ✅ Close WebSocket connection first
+      client.removeChannel(channel)  // Then remove from client tracking
     }
   }, [scriptId, acquireLock, client])
 
