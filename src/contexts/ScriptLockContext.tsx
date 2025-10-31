@@ -4,11 +4,12 @@
  * ARCHITECTURAL DECISION (2025-10-30):
  * Provides infrastructure to prevent concurrent lock acquisition bug by enforcing single acquisition point.
  *
- * **STATUS: INFRASTRUCTURE READY, MIGRATION REQUIRED**
+ * **STATUS: PARTIAL MIGRATION COMPLETE**
  * - ✅ Context implementation complete and tested
- * - ⚠️ Production components NOT YET migrated (TipTapEditor, ScriptLockIndicator still use useScriptLock directly)
- * - ⚠️ TMG blocking decision PENDING until component migration complete
- * - 🔴 Bug still active in production until migration applied
+ * - ✅ TipTapEditor migrated to ScriptLockProvider (2025-10-31)
+ * - ⚠️ ScriptLockIndicator still uses useScriptLock directly (pending migration)
+ * - ⚠️ Bug risk reduced but not eliminated until ScriptLockIndicator migrated
+ * - Last updated: 2025-10-31
  *
  * PROBLEM IDENTIFIED:
  * Multiple `useScriptLock` hook instances compete for same lock:
@@ -16,12 +17,12 @@
  * - User loses lock mid-edit
  * - Production impact: Phase 3-4 UI will mount two hooks (TipTapEditor + ScriptLockIndicator)
  *
- * SOLUTION PATTERN (when applied):
- * - TipTapEditor wraps content in ScriptLockProvider (owns lock)
- * - ScriptLockIndicator uses useScriptLockContext (reads state)
- * - Only one useScriptLock invocation per script ID
+ * SOLUTION PATTERN (partially applied):
+ * - ✅ TipTapEditor wraps content in ScriptLockProvider (owns lock) - line 57
+ * - ⚠️ ScriptLockIndicator still uses useScriptLock (creates duplicate acquisition) - line 111
+ * - Goal: Only one useScriptLock invocation per script ID
  *
- * WILL PREVENT (after migration):
+ * PREVENTS (after full migration):
  * - Multiple hook instances competing for same lock
  * - Lock stealing when mounting additional UI components
  * - Race conditions between editor and indicator
@@ -29,19 +30,19 @@
  * VALIDATION:
  * - ✅ Infrastructure tested (regression test validates single acquisition)
  * - ✅ API design reviewed (code-review-specialist approved)
- * - ⚠️ Production integration pending (follow-up task required)
- * - ⚠️ TMG blocker remains RED until components migrated
+ * - ✅ TipTapEditor integration complete
+ * - ⚠️ ScriptLockIndicator migration pending
  *
- * MIGRATION TASK REQUIRED:
- * 1. Update TipTapEditor to wrap in <ScriptLockProvider>
- * 2. Update ScriptLockIndicator to use useScriptLockContext()
- * 3. Verify only one lock acquisition per script in production
- * 4. Update TMG status to GREEN after validation
+ * REMAINING MIGRATION TASK:
+ * 1. ✅ Update TipTapEditor to wrap in <ScriptLockProvider> (COMPLETE)
+ * 2. ⚠️ Update ScriptLockIndicator to use useScriptLockContext() (PENDING)
+ * 3. ⚠️ Verify only one lock acquisition per script in production (PENDING)
+ * 4. ⚠️ Update status to COMPLETE after validation
  *
  * @see src/hooks/useScriptLock.ts (underlying lock implementation)
  * @see src/contexts/ScriptLockContext.test.tsx (regression tests)
- * @see src/components/TipTapEditor.tsx (MIGRATION REQUIRED)
- * @see src/components/ScriptLockIndicator.tsx (MIGRATION REQUIRED)
+ * @see src/components/TipTapEditor.tsx (✅ MIGRATED - line 57)
+ * @see src/components/ScriptLockIndicator.tsx (⚠️ MIGRATION PENDING - line 111)
  */
 
 import { createContext, useContext, ReactNode } from 'react'
