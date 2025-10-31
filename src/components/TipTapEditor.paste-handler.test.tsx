@@ -116,6 +116,19 @@ describe('TipTap Paste Handler - <br> Tag Preservation', () => {
  *
  * TDD Phase: RED - This test MUST FAIL until paste handler is fixed
  */
+
+// SKIP REASON: RED
+// BLOCKED BY: Multi-paragraph paste handler not yet implemented
+// OWNER: implementation-lead
+// UNBLOCK TARGET: Phase 2.2 (Paste handling improvements)
+// DETAILS: RED phase tests define contract for Google Docs multi-paragraph paste:
+//          - Split multi-paragraph content into separate paragraph nodes
+//          - Preserve component structure through paste operations
+//          - Handle <br> tag preservation in sanitization
+//          Tests WILL FAIL when un-skipped (proper TDD RED phase)
+// TDD TRANSITION: Remove .skip when paste handler work begins → let tests fail → implement → GREEN
+// TRACKING: APP-ROADMAP.md Phase 2.2
+
 describe.skip('TipTap Paste Handler - Multi-Paragraph Component Extraction (TDD RED)', () => {
   let editor: Editor | null = null;
 

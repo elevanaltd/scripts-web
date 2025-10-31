@@ -115,6 +115,18 @@ const TestWrapper = ({ children }: { children: React.ReactNode }) => (
   </NavigationProvider>
 );
 
+// SKIP REASON: RED
+// BLOCKED BY: Comment selection feature not yet implemented
+// OWNER: implementation-lead
+// UNBLOCK TARGET: Phase 2.2 (Collaborative Comments)
+// DETAILS: RED phase tests define contract for Google Docs-style commenting:
+//          - Text selection detection with position anchoring
+//          - Comment popup UI on selection
+//          - Comment highlight marks in editor
+//          Tests WILL FAIL when un-skipped (proper TDD RED phase)
+// TDD TRANSITION: Remove .skip when Phase 2.2 begins → let tests fail → implement → GREEN
+// TRACKING: APP-ROADMAP.md Phase 2.2
+
 describe.skip('TipTapEditor Comments - Phase 2.2 TDD', () => {
   beforeEach(() => {
     vi.clearAllMocks();
