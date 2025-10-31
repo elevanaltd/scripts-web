@@ -54,6 +54,7 @@ export function useScriptLock(
     if (!scriptId || isAcquiringRef.current || isUnmountingRef.current) return
 
     isAcquiringRef.current = true
+    lockAcquisitionSucceededRef.current = false // Reset flag to prevent stale state from previous script
     setLockStatus('checking')
 
     try {
@@ -227,6 +228,11 @@ export function useScriptLock(
   useEffect(() => {
     if (!scriptId) return
 
+    // CRITICAL: Reset unmounting flag on mount to allow lock acquisition
+    // Bug fix (2025-10-31): Without this reset, isUnmountingRef stays true after first unmount,
+    // blocking all subsequent lock acquisitions (line 54 guard check fails)
+    isUnmountingRef.current = false
+
     acquireLock()
 
     // Cleanup on unmount
@@ -327,22 +333,15 @@ export function useScriptLock(
             const isOwnLock = currentUserId === newLock.locked_by
 
             if (isOwnLock) {
-              // This is our own lock acquisition - but only trust it if our RPC call succeeded
-              // This prevents the case where two hooks for the same user try to acquire the same lock:
-              // - Hook1 acquires lock (RPC succeeds, flag=true)
-              // - Hook2 tries to acquire (RPC fails, flag=false)
-              // - Hook2 receives INSERT event for Hook1's lock
-              // - Without this check, Hook2 would incorrectly set lockStatus='acquired'
-              if (lockAcquisitionSucceededRef.current) {
-                setLockStatus('acquired')
-                setLockedBy({
-                  id: newLock.locked_by,
-                  name: profileResult.data?.display_name || 'Unknown User'
-                })
-              } else {
-                // Our RPC call failed, so we don't own this lock (race condition)
-                console.log('[useScriptLock] Ignoring realtime INSERT - our acquisition RPC failed')
-              }
+              // This is our own lock acquisition - TRUST DATABASE VERIFICATION ONLY
+              // Don't set lockStatus='acquired' here - let the verification polling in acquireLock() handle it
+              // This prevents race conditions where:
+              // 1. Realtime event fires before verification completes
+              // 2. Stale lockAcquisitionSucceededRef from previous script affects current script
+              // 3. Multiple hooks for same script receive same INSERT event
+              //
+              // The database verification polling (lines 85-145) is the ONLY source of truth for lockStatus='acquired'
+              console.log('[useScriptLock] Realtime INSERT for own lock - waiting for database verification')
             } else {
               // Lock is held by another user
               setLockStatus('locked')
