@@ -14,24 +14,24 @@
  * 3. Checking (Gray): "Checking lock status..." - initial load/re-check
  * 4. Unlocked (Red): "⚠️ You lost edit lock" - lock expired, needs re-acquisition
  *
- * **ARCHITECTURE**:
- * - Uses useScriptLock hook (Phase 2 - tested and working)
- * - Integrates with TipTapEditor (Phase 4 - next)
+ * **ARCHITECTURE** (Updated 2025-10-31):
+ * - ✅ Consumes ScriptLockContext (migration complete)
+ * - ✅ Prevents duplicate lock acquisition bug
+ * - Must be used inside ScriptLockProvider (provided by TipTapEditor)
  * - Co-located tests (ScriptLockIndicator.test.tsx)
  *
  * **RIPPLE ANALYSIS**:
  * - LOCAL: Component rendering and styling
- * - INTEGRATES: useScriptLock hook (no changes needed)
+ * - INTEGRATES: ScriptLockContext (single lock acquisition point)
  * - AFFECTS: User visibility into lock state
- * - ENABLES: Phase 4 editor readonly integration
+ * - REQUIRES: Must be inside ScriptLockProvider boundary
  */
 
 import React from 'react'
-import { useScriptLock } from '../hooks/useScriptLock'
+import { useScriptLockContext } from '../contexts/ScriptLockContext'
 import './ScriptLockIndicator.css'
 
 export interface ScriptLockIndicatorProps {
-  scriptId: string
   className?: string
 }
 
@@ -88,12 +88,12 @@ function createStatusConfig(
 /**
  * ScriptLockIndicator - Shows lock status with visual indicators
  *
- * @param scriptId - UUID of script to show lock status for
  * @param className - Optional additional CSS classes
  *
  * **USAGE**:
  * ```tsx
- * <ScriptLockIndicator scriptId={script.id} />
+ * // Must be inside ScriptLockProvider (provided by TipTapEditor)
+ * <ScriptLockIndicator />
  * ```
  *
  * **ACCESSIBILITY**:
@@ -102,13 +102,13 @@ function createStatusConfig(
  * - aria-hidden on decorative icons
  * - Keyboard accessible buttons
  *
- * **REFACTORING**:
- * - Extracted status config to factory function
- * - Improved type safety with LockStatusConfig interface
- * - Clear separation between display and logic
+ * **MIGRATION NOTES (2025-10-31)**:
+ * - Removed scriptId prop (now comes from context)
+ * - Replaced useScriptLock with useScriptLockContext
+ * - Prevents duplicate lock acquisition bug
  */
-export function ScriptLockIndicator({ scriptId, className = '' }: ScriptLockIndicatorProps) {
-  const { lockStatus, lockedBy, releaseLock, requestEdit } = useScriptLock(scriptId)
+export function ScriptLockIndicator({ className = '' }: ScriptLockIndicatorProps) {
+  const { lockStatus, lockedBy, releaseLock, requestEdit } = useScriptLockContext()
 
   // Generate status configuration
   const config = createStatusConfig(lockStatus, lockedBy?.name || null, releaseLock, requestEdit)

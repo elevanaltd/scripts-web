@@ -39,13 +39,29 @@ import { loadScriptForVideo, ComponentData, ScriptWorkflowStatus, generateConten
 import { Logger } from '../services/logger';
 import { extractComponents as extractComponentsFromDoc } from '../lib/componentExtraction';
 import { sanitizeHTML, handlePlainTextPaste, convertPlainTextToHTML, validateDOMPurifyConfig } from '../lib/editor/sanitizeUtils';
-import { useScriptLock } from '../hooks/useScriptLock';
+import { ScriptLockProvider, useScriptLockContext } from '../contexts/ScriptLockContext';
 import { ScriptLockIndicator } from './ScriptLockIndicator';
 import './TipTapEditor.css';
 
 // Critical-Engineer: consulted for Security vulnerability assessment
 
+// PUBLIC API: TipTapEditor wraps ScriptLockProvider
+// TMG BLOCKER RESOLUTION: Single lock acquisition point prevents concurrent lock bug
 export const TipTapEditor: React.FC = () => {
+  const { currentScript } = useCurrentScript();
+
+  // Wrap internal component in ScriptLockProvider
+  // This ensures only ONE useScriptLock invocation per script
+  // ScriptLockProvider handles undefined scriptId gracefully
+  return (
+    <ScriptLockProvider scriptId={currentScript?.id}>
+      <TipTapEditorContent />
+    </ScriptLockProvider>
+  );
+};
+
+// INTERNAL: TipTapEditorContent uses context for lock state
+const TipTapEditorContent: React.FC = () => {
   // MITIGATION 1: Inline critical CSS to prevent FOUC (Flash of Unstyled Content)
   // Critical-Engineer: consulted for CSS FOUC risk mitigation (HIGH priority)
   // Ensures component labels (C1, C2, C3...) render correctly immediately on slow networks
@@ -91,7 +107,8 @@ export const TipTapEditor: React.FC = () => {
   const { toasts, showSuccess, showError } = useToast();
 
   // Script lock management (Phase 3-4: Lock UI)
-  const { lockStatus, lockedBy } = useScriptLock(currentScript?.id);
+  // Uses context to prevent concurrent lock acquisitions (TMG blocker resolution)
+  const { lockStatus, lockedBy } = useScriptLockContext();
 
   // Convert lastSaved from string (hook) to Date (component usage)
   const lastSaved = useMemo(
@@ -359,6 +376,79 @@ export const TipTapEditor: React.FC = () => {
       return;
     }
 
+    // RACE CONDITION FIX (2025-10-31): Verify lock exists in database before attempting save
+    // Problem: Lock acquisition is async (~100-300ms). During initial mount, lockStatus transitions:
+    //   'checking' → (100-300ms delay) → 'acquired'
+    // Auto-save can trigger during this window, causing 403 errors when save_script_with_components
+    // RPC checks for lock existence.
+    //
+    // Solution: Instead of blocking saves based on lockStatus state (which is optimistic),
+    // verify the lock actually exists in the database. This makes saves self-correcting:
+    // - If lockStatus='checking' but lock exists in DB → save proceeds (lock acquired faster than state updated)
+    // - If lockStatus='acquired' but lock missing from DB → save blocked (state is stale)
+    // - If lockStatus='locked' → save blocked (don't have permission)
+    //
+    // This approach eliminates the race condition by using database as source of truth,
+    // while still respecting lockStatus='locked' to prevent saves when another user has the lock.
+
+    // Quick check: If we know we're locked out, don't even query database
+    if (lockStatus === 'locked') {
+      Logger.debug('Save blocked: Script locked by another user', {
+        scriptId: currentScript.id
+      });
+      return;
+    }
+
+    // Verify lock exists in database (handles lockStatus='checking' or 'acquired')
+    try {
+      // Type assertion needed: script_locks is app-specific table not in shared-lib types
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: lockRecord, error: lockError } = await (supabase as any)
+        .from('script_locks')
+        .select('locked_by')
+        .eq('script_id', currentScript.id)
+        .maybeSingle();
+
+      if (lockError) {
+        Logger.warn('Save blocked: Lock verification failed', {
+          error: lockError.message,
+          scriptId: currentScript.id
+        });
+        return;
+      }
+
+      if (!lockRecord) {
+        Logger.debug('Save blocked: Lock not yet acquired (checking database)', {
+          scriptId: currentScript.id,
+          lockStatus, // May show 'checking' or 'acquired' depending on timing
+        });
+        return;
+      }
+
+      // Lock exists - verify it's owned by us
+      const { data: currentUser } = await supabase.auth.getUser();
+      if (lockRecord.locked_by !== currentUser.user?.id) {
+        Logger.warn('Save blocked: Lock owned by different user', {
+          scriptId: currentScript.id,
+          lockOwner: lockRecord.locked_by,
+          currentUser: currentUser.user?.id
+        });
+        return;
+      }
+
+      // Lock verified - proceed with save
+      Logger.debug('Lock verified, proceeding with save', {
+        scriptId: currentScript.id,
+        lockStatus
+      });
+    } catch (err) {
+      Logger.error('Save blocked: Lock verification error', {
+        error: err instanceof Error ? err.message : String(err),
+        scriptId: currentScript.id
+      });
+      return;
+    }
+
     try {
       const plainText = editor.getText();
       // ISSUE: Y.js Collaborative Editing Integration
@@ -385,7 +475,7 @@ export const TipTapEditor: React.FC = () => {
         // Hook automatically sets saveStatus('error') via TanStack Query onError
       }
     }
-  }, [currentScript, editor, extractedComponents, loadCommentHighlights, permissions.canEditScript, save]);
+  }, [currentScript, editor, extractedComponents, loadCommentHighlights, lockStatus, permissions.canEditScript, save]);
 
   // Handle comment creation from sidebar
   const handleCommentCreated = useCallback(async () => {
@@ -682,7 +772,7 @@ export const TipTapEditor: React.FC = () => {
 
             {/* Script Lock Indicator (Phase 3-4: Lock UI) */}
             {currentScript && (
-              <ScriptLockIndicator scriptId={currentScript.id} />
+              <ScriptLockIndicator />
             )}
           </div>
 
@@ -702,6 +792,11 @@ export const TipTapEditor: React.FC = () => {
             <div className="loading-placeholder">
               <div className="loading-spinner"></div>
               <p>Loading script...</p>
+            </div>
+          ) : lockStatus === 'checking' && currentScript ? (
+            <div className="loading-placeholder">
+              <div className="loading-spinner"></div>
+              <p>Acquiring edit lock...</p>
             </div>
           ) : !selectedVideo ? (
             <div className="no-video-placeholder">

@@ -49,6 +49,38 @@ const SUPABASE_ANON_KEY =
   'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH' // Local Supabase default from `supabase status`
 
 /**
+ * Fail-Fast Guard: Detect CI Misconfiguration
+ *
+ * **Issue**: Environment overrides (e.g., hardcoded URLs in package.json) can silently
+ * break CI preview branch connection, causing tests to hang for 50+ minutes.
+ *
+ * **Solution**: Explicit validation that catches misconfigurations immediately.
+ *
+ * **Detection Logic**:
+ * - If SUPABASE_PREVIEW_URL is set (CI environment)
+ * - But resolved SUPABASE_URL contains 127.0.0.1 (localhost)
+ * - Then package.json or another override is blocking preview connection
+ *
+ * **Impact**: Prevents silent regressions where future hardcoding causes CI hangs.
+ *
+ * **Constitutional Basis**:
+ * - Principal-Engineer Strategic Enhancement: Prevent cross-app propagation
+ * - MINIMAL_INTERVENTION: Fail fast with clear error message
+ * - Anti-Validation Theater: Verify actual URL resolution, not just configuration
+ *
+ * **References**:
+ * - PE Strategic Recommendations: Fail-fast guards prevent regression
+ * - Root Cause: package.json override blocked CI preview connection
+ */
+if (process.env.SUPABASE_PREVIEW_URL && SUPABASE_URL.includes('127.0.0.1')) {
+  throw new Error(
+    'CI MISCONFIGURATION: SUPABASE_PREVIEW_URL is set but resolved URL is localhost. ' +
+    'This indicates an environment override (likely in package.json) is preventing preview branch connection. ' +
+    `Expected: ${process.env.SUPABASE_PREVIEW_URL}, Got: ${SUPABASE_URL}`
+  )
+}
+
+/**
  * Test Supabase client
  * Automatically uses preview branch (CI) or localhost (local dev)
  */

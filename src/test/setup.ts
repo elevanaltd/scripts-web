@@ -3,9 +3,10 @@
  *
  * Runs before all tests to configure the test environment.
  * Runs cleanup after each test to prevent state leakage.
+ * Runs global teardown after all tests to cleanup realtime connections.
  */
 
-import { expect, afterEach, beforeEach, vi } from 'vitest'
+import { expect, afterEach, afterAll, beforeEach, vi } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { resetFactoryIds } from './factories'
@@ -187,4 +188,35 @@ beforeEach(() => {
 
 afterEach(() => {
   console.error = originalConsoleError
+})
+
+/**
+ * Global Teardown - Cleanup Realtime Connections
+ *
+ * **Issue**: Vitest keeps realtime WebSocket connections open after tests complete,
+ * causing resource exhaustion and orphaned Docker containers as test volume grows.
+ *
+ * **Solution**: Explicitly disconnect realtime client and clear all channels in global teardown.
+ *
+ * **Impact**: Prevents flaky test exits, resource leaks, and CI hangs from orphaned connections.
+ *
+ * **Constitutional Basis**:
+ * - Principal-Engineer Strategic Enhancement: Identified realtime cleanup gap during tactical fix
+ * - MINIMAL_INTERVENTION: Clean exit path for test suite
+ * - Quality Gate Enforcement: Reliable CI execution
+ *
+ * **References**:
+ * - PE Strategic Analysis: Tactical fix + strategic enhancement pattern
+ * - Root Cause: Integration test CI hanging (50+ minutes)
+ */
+afterAll(async () => {
+  // Only cleanup in integration test mode (unit tests use mocked client)
+  if (isIntegrationTest) {
+    const { testSupabase } = await import('./supabase-test-client')
+    await testSupabase.realtime.disconnect()
+    testSupabase.removeAllChannels()
+  }
+
+  // Clear any remaining timers
+  vi.clearAllTimers()
 })

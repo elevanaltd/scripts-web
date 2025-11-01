@@ -42,21 +42,26 @@ export function useScriptLock(
 
   // Track acquisition state to prevent race conditions
   const isAcquiringRef = useRef(false)
+  const isUnmountingRef = useRef(false)
+  const isManualReleaseRef = useRef(false)
+  const lockAcquisitionSucceededRef = useRef(false) // Track if OUR lock acquisition RPC succeeded
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const reacquisitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Auto-lock on mount
   const acquireLock = useCallback(async () => {
-    if (!scriptId || isAcquiringRef.current) return
+    if (!scriptId || isAcquiringRef.current || isUnmountingRef.current) return
 
     isAcquiringRef.current = true
+    lockAcquisitionSucceededRef.current = false // Reset flag to prevent stale state from previous script
     setLockStatus('checking')
 
     try {
       const { data, error } = await acquireScriptLock(client, scriptId)
 
       if (error) {
-        console.error('Lock acquisition error:', error)
+        console.error('[useScriptLock] Lock acquisition error:', error)
         setLockStatus('locked')
         isAcquiringRef.current = false
         return
@@ -64,14 +69,89 @@ export function useScriptLock(
 
       const lockResult = data?.[0]
       if (lockResult?.success) {
-        setLockStatus('acquired')
-        setLockedBy({ id: lockResult.locked_by_user_id, name: lockResult.locked_by_name })
+        // RACE CONDITION FIX (2025-10-31): Verify lock exists in database before setting acquired
+        // Problem: acquireScriptLock() returns success immediately, but database INSERT may not be visible yet
+        // The actual fix is in TipTapEditor handleSave() which verifies lock in database before saving
+        // This verification ensures lockStatus eventually reflects database reality for UI consistency
+        const { data: currentUser } = await client.auth.getUser()
+        const currentUserId = currentUser.user?.id
+
+        if (!currentUserId) {
+          console.error('[useScriptLock] No current user ID')
+          setLockStatus('locked')
+          isAcquiringRef.current = false
+          return
+        }
+
+        let verified = false
+        let attempts = 0
+        const maxAttempts = 10 // Max 1 second total wait (10 * 100ms)
+
+        while (!verified && attempts < maxAttempts) {
+          const { data: lockRecord, error: verifyError} = await scriptLocksTable(client)
+            .select('locked_by')
+            .eq('script_id', scriptId)
+            .maybeSingle()
+
+          if (verifyError) {
+            console.error('[useScriptLock] Lock verification error:', verifyError)
+            setLockStatus('locked')
+            isAcquiringRef.current = false
+            return
+          }
+
+          if (lockRecord) {
+            // Lock exists in database - verify it's owned by us
+            if (lockRecord.locked_by === currentUserId) {
+              // OUR lock confirmed in database
+              verified = true
+              lockAcquisitionSucceededRef.current = true // Mark that our RPC call succeeded
+              setLockStatus('acquired')
+              setLockedBy({ id: lockResult.locked_by_user_id, name: lockResult.locked_by_name })
+              console.log('[useScriptLock] Lock acquired and verified', {
+                scriptId,
+                attempts: attempts + 1,
+                verificationTimeMs: (attempts + 1) * 100
+              })
+            } else {
+              // Lock exists but owned by another user (race condition - we lost)
+              console.log('[useScriptLock] Lock verification failed - lock held by another user')
+              setLockStatus('locked')
+              // Fetch other user's name for display
+              const { data: profile } = await client
+                .from('user_profiles')
+                .select('display_name')
+                .eq('id', lockRecord.locked_by)
+                .maybeSingle()
+              setLockedBy({
+                id: lockRecord.locked_by,
+                name: profile?.display_name || 'Unknown User'
+              })
+              isAcquiringRef.current = false
+              return
+            }
+          } else {
+            // Lock not visible yet, wait and retry
+            attempts++
+            if (attempts < maxAttempts) {
+              await new Promise(resolve => setTimeout(resolve, 100))
+            }
+          }
+        }
+
+        if (!verified) {
+          console.error('[useScriptLock] Lock verification timeout - lock not found in database after', maxAttempts * 100, 'ms')
+          setLockStatus('locked')
+        }
       } else if (lockResult) {
+        console.log('[useScriptLock] Lock already held by:', lockResult.locked_by_name)
+        lockAcquisitionSucceededRef.current = false // Mark that our RPC call failed
         setLockStatus('locked')
         setLockedBy({ id: lockResult.locked_by_user_id || '', name: lockResult.locked_by_name || 'Unknown' })
       }
     } catch (err) {
-      console.error('Lock acquisition failed:', err)
+      console.error('[useScriptLock] Lock acquisition failed:', err)
+      lockAcquisitionSucceededRef.current = false // Mark that our RPC call failed
       setLockStatus('locked')
     } finally {
       isAcquiringRef.current = false
@@ -105,11 +185,21 @@ export function useScriptLock(
     if (!scriptId) return
 
     try {
+      // Set flag to prevent re-acquisition on DELETE event
+      isManualReleaseRef.current = true
+      lockAcquisitionSucceededRef.current = false // Reset acquisition flag
+
       await scriptLocksTable(client).delete().eq('script_id', scriptId)
       setLockStatus('unlocked')
       setLockedBy(null)
+
+      // Reset flag after a delay (allows DELETE event to process)
+      setTimeout(() => {
+        isManualReleaseRef.current = false
+      }, 1000)
     } catch (err) {
       console.error('Lock release failed:', err)
+      isManualReleaseRef.current = false
     }
   }, [scriptId, client])
 
@@ -138,22 +228,50 @@ export function useScriptLock(
   useEffect(() => {
     if (!scriptId) return
 
+    // CRITICAL: Reset unmounting flag on mount to allow lock acquisition
+    // Bug fix (2025-10-31): Without this reset, isUnmountingRef stays true after first unmount,
+    // blocking all subsequent lock acquisitions (line 54 guard check fails)
+    isUnmountingRef.current = false
+
     acquireLock()
 
     // Cleanup on unmount
     return () => {
-      if (scriptId && lockStatus === 'acquired') {
-        scriptLocksTable(client).delete().eq('script_id', scriptId)
+      // Set unmounting flag to prevent re-acquisition
+      isUnmountingRef.current = true
+
+      // Unsubscribe from realtime channel FIRST (prevent DELETE event from triggering re-acquisition)
+      if (channelRef.current) {
+        client.removeChannel(channelRef.current)
+        channelRef.current = null
       }
 
       // Clear heartbeat interval
       if (heartbeatIntervalRef.current) {
         clearInterval(heartbeatIntervalRef.current)
+        heartbeatIntervalRef.current = null
       }
 
-      // Unsubscribe from realtime channel
-      if (channelRef.current) {
-        client.removeChannel(channelRef.current)
+      // Clear any pending reacquisition timeout
+      if (reacquisitionTimeoutRef.current) {
+        clearTimeout(reacquisitionTimeoutRef.current)
+        reacquisitionTimeoutRef.current = null
+      }
+
+      // Delete lock LAST (after channel removed)
+      if (scriptId) {
+        // Fire-and-forget deletion (cleanup must be synchronous)
+        scriptLocksTable(client)
+          .delete()
+          .eq('script_id', scriptId)
+          .then(({ error }: { error: unknown }) => {
+            if (error) {
+              console.error('[useScriptLock] Cleanup delete failed:', error)
+            }
+          })
+          .catch((err: unknown) => {
+            console.error('[useScriptLock] Cleanup delete error:', err)
+          })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -194,15 +312,58 @@ export function useScriptLock(
           table: 'script_locks',
           filter: `script_id=eq.${scriptId}`,
         },
-        (payload) => {
+        async (payload) => {
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            // Cancel any pending reacquisition attempts
+            if (reacquisitionTimeoutRef.current) {
+              clearTimeout(reacquisitionTimeoutRef.current)
+              reacquisitionTimeoutRef.current = null
+            }
+
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const newLock = payload.new as any
-            setLockStatus('locked')
-            setLockedBy({ id: newLock.locked_by_id, name: newLock.locked_by_name })
+
+            // Fetch lock holder's name and current user ID
+            const [profileResult, userResult] = await Promise.all([
+              client.from('user_profiles').select('display_name').eq('id', newLock.locked_by).maybeSingle(),
+              client.auth.getUser()
+            ])
+
+            const currentUserId = userResult.data.user?.id
+            const isOwnLock = currentUserId === newLock.locked_by
+
+            if (isOwnLock) {
+              // This is our own lock acquisition - TRUST DATABASE VERIFICATION ONLY
+              // Don't set lockStatus='acquired' here - let the verification polling in acquireLock() handle it
+              // This prevents race conditions where:
+              // 1. Realtime event fires before verification completes
+              // 2. Stale lockAcquisitionSucceededRef from previous script affects current script
+              // 3. Multiple hooks for same script receive same INSERT event
+              //
+              // The database verification polling (lines 85-145) is the ONLY source of truth for lockStatus='acquired'
+              console.log('[useScriptLock] Realtime INSERT for own lock - waiting for database verification')
+            } else {
+              // Lock is held by another user
+              setLockStatus('locked')
+              setLockedBy({
+                id: newLock.locked_by,
+                name: profileResult.data?.display_name || 'Unknown User'
+              })
+            }
           } else if (payload.eventType === 'DELETE') {
-            // Lock released - attempt re-acquisition
-            acquireLock()
+            // Lock released - debounce re-acquisition to allow INSERT events to process first
+            // This prevents race conditions when lock is deleted then immediately re-inserted by another user
+            if (!isManualReleaseRef.current) {
+              // Clear any pending reacquisition
+              if (reacquisitionTimeoutRef.current) {
+                clearTimeout(reacquisitionTimeoutRef.current)
+              }
+
+              // Wait 100ms for potential INSERT event before attempting reacquisition
+              reacquisitionTimeoutRef.current = setTimeout(() => {
+                acquireLock()
+              }, 100)
+            }
           }
         }
       )
@@ -211,7 +372,8 @@ export function useScriptLock(
     channelRef.current = channel
 
     return () => {
-      client.removeChannel(channel)
+      channel.unsubscribe()  // ✅ Close WebSocket connection first
+      client.removeChannel(channel)  // Then remove from client tracking
     }
   }, [scriptId, acquireLock, client])
 
